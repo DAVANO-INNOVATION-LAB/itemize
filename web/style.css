@@ -1,0 +1,255 @@
+/* itemize — deliberately plain.
+   The reader is stressed and may already be the target of a scam. This should
+   read like a public library form, not a security console. */
+
+:root {
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --ink: #1e2226;
+  --ink-soft: #545c66;
+  --line: #ddd8cf;
+  --accent: #2f5d50;
+  --accent-soft: #eaf1ee;
+  --high: #8c2f22;
+  --high-bg: #fbeeec;
+  --warn: #8a5a12;
+  --warn-bg: #fcf4e6;
+  --notice: #2b4a72;
+  --notice-bg: #eef3f9;
+  --info: #5a5a5a;
+  --info-bg: #f2f2f0;
+  --radius: 6px;
+  --measure: 68ch;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181b;
+    --surface: #1d2024;
+    --ink: #e6e4e0;
+    --ink-soft: #a2a8b0;
+    --line: #33383e;
+    --accent: #7fb8a5;
+    --accent-soft: #1f2a27;
+    --high: #f0a094;
+    --high-bg: #2c1c19;
+    --warn: #e3ba76;
+    --warn-bg: #2a2118;
+    --notice: #9dbde2;
+    --notice-bg: #1a2230;
+    --info: #a0a0a0;
+    --info-bg: #212326;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.wrap { max-width: 860px; margin: 0 auto; padding: 2rem 1.25rem 5rem; }
+
+header { border-bottom: 1px solid var(--line); padding-bottom: 1.5rem; margin-bottom: 2rem; }
+h1 {
+  font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  font-weight: 600; font-size: 1.9rem; margin: 0 0 .35rem;
+  letter-spacing: -0.01em;
+}
+.tagline { color: var(--ink-soft); margin: 0; max-width: var(--measure); }
+
+h2 {
+  font-family: Georgia, serif; font-weight: 600; font-size: 1.25rem;
+  margin: 2.5rem 0 .75rem;
+}
+
+.privacy {
+  background: var(--accent-soft);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: .9rem 1.1rem;
+  margin: 1.5rem 0;
+  font-size: .94rem;
+}
+.privacy strong { color: var(--accent); }
+
+textarea {
+  width: 100%; min-height: 190px; padding: .85rem;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  resize: vertical;
+}
+textarea:focus, button:focus-visible, .filebtn:focus-within {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
+.controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin-top: .85rem; }
+
+button {
+  font: inherit; font-weight: 500;
+  padding: .55rem 1.15rem; border-radius: var(--radius);
+  border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  cursor: pointer;
+}
+button:hover { filter: brightness(1.08); }
+button.secondary { background: transparent; color: var(--accent); }
+button[disabled] { opacity: .45; cursor: default; filter: none; }
+
+.filebtn {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .55rem 1rem; cursor: pointer; background: var(--surface);
+  color: var(--ink-soft);
+}
+.filebtn input { display: none; }
+
+.hint { color: var(--ink-soft); font-size: .88rem; margin: .5rem 0 0; }
+
+#dropzone { border-radius: var(--radius); transition: outline-color .12s; }
+#dropzone.over { outline: 2px dashed var(--accent); outline-offset: 6px; }
+#dropzone.over textarea { background: var(--accent-soft); }
+
+.filestatus { font-size: .88rem; margin: .7rem 0 0; color: var(--ink-soft); }
+.filestatus.ok { color: var(--accent); }
+.filestatus.warn {
+  color: var(--warn); background: var(--warn-bg);
+  border: 1px solid var(--line); border-left: 3px solid var(--warn);
+  border-radius: var(--radius); padding: .65rem .8rem;
+}
+
+.summary {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: .75rem; margin: 1.25rem 0;
+}
+.stat {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: .8rem .9rem;
+}
+.stat .k { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); }
+.stat .v { font-size: 1.4rem; font-weight: 600; margin-top: .15rem; }
+.stat.flag .v { color: var(--high); }
+
+.finding {
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--info);
+  border-radius: var(--radius); padding: 1rem 1.15rem; margin-bottom: .9rem;
+}
+.finding.high { border-left-color: var(--high); }
+.finding.warn { border-left-color: var(--warn); }
+.finding.notice { border-left-color: var(--notice); }
+
+.badge {
+  display: inline-block; font-size: .7rem; font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase;
+  padding: .18rem .5rem; border-radius: 3px; margin-bottom: .5rem;
+  background: var(--info-bg); color: var(--info);
+}
+.high .badge { background: var(--high-bg); color: var(--high); }
+.warn .badge { background: var(--warn-bg); color: var(--warn); }
+.notice .badge { background: var(--notice-bg); color: var(--notice); }
+
+.finding h3 { margin: 0 0 .45rem; font-size: 1.02rem; font-weight: 600; }
+.finding p { margin: 0 0 .6rem; max-width: var(--measure); }
+.amount { font-size: .88rem; color: var(--ink-soft); font-style: italic; }
+.source {
+  font-size: .8rem; color: var(--ink-soft);
+  border-top: 1px dotted var(--line); padding-top: .55rem; margin-top: .7rem;
+  word-break: break-word;
+}
+
+table { width: 100%; border-collapse: collapse; font-size: .88rem; margin-top: .5rem; }
+th, td { text-align: left; padding: .45rem .55rem; border-bottom: 1px solid var(--line); }
+th { font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.scroll { overflow-x: auto; }
+
+/* Table labels: hidden until the table reflows into cards on narrow screens. */
+.lbl { display: none; }
+
+/* ------------------------------------------------------------- mobile ---
+   Someone reading this on a phone is often standing at a billing counter or
+   sitting in a waiting room. Targets are finger-sized, the input does not
+   trigger iOS zoom, and the six-column line table becomes cards. */
+@media (max-width: 640px) {
+  body { font-size: 15px; }
+  .wrap { padding: 1.5rem 1rem 4rem; }
+  h1 { font-size: 1.55rem; }
+  h2 { font-size: 1.12rem; margin-top: 2rem; }
+  .privacy { padding: .8rem .95rem; }
+
+  /* 16px minimum: anything smaller makes iOS Safari zoom on focus. */
+  textarea { font-size: 16px; min-height: 150px; }
+
+  .controls { flex-direction: column; align-items: stretch; gap: .5rem; }
+  .controls button, .filebtn {
+    width: 100%; text-align: center; padding: .8rem 1rem; min-height: 44px;
+  }
+
+  .summary { grid-template-columns: 1fr 1fr; gap: .5rem; }
+  #context { grid-template-columns: 1fr; }
+  #context label { padding: .4rem 0; }
+  .stat { padding: .65rem .7rem; }
+  .stat .v { font-size: 1.15rem; }
+
+  .finding { padding: .85rem .95rem; }
+  .finding h3 { font-size: .98rem; }
+
+  .scroll { overflow-x: visible; }
+  #linetable thead {
+    position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  #linetable, #linetable tbody, #linetable tr, #linetable td { display: block; width: 100%; }
+  #linetable tr {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: .55rem .75rem; margin-bottom: .6rem;
+  }
+  #linetable td {
+    border: 0; padding: .2rem 0; display: flex;
+    justify-content: space-between; align-items: baseline; gap: 1rem;
+  }
+  #linetable td.num, #linetable td.desc { text-align: left; }
+  #linetable td .val { font-variant-numeric: tabular-nums; text-align: right; }
+  #linetable td.desc .val { text-align: right; }
+  .lbl {
+    display: inline; flex: 0 0 auto;
+    font-size: .74rem; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--ink-soft);
+  }
+}
+
+#context { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+           gap: .75rem; margin: 1rem 0; }
+#context fieldset { border: 1px solid var(--line); border-radius: var(--radius);
+                    background: var(--surface); padding: .7rem .9rem; margin: 0; }
+#context legend { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em;
+                  color: var(--ink-soft); padding: 0 .3rem; }
+#context label { display: block; padding: .22rem 0; font-size: .92rem; cursor: pointer; }
+#context label.inline { display: flex; flex-direction: column; gap: .25rem;
+                        font-size: .82rem; color: var(--ink-soft); margin-top: .3rem; }
+#context input[type="text"] { font: inherit; padding: .4rem .5rem; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 4px; width: 100%; }
+#context input[type="radio"], #context input[type="checkbox"] { margin-right: .45rem; }
+
+.hint.small { font-size: .8rem; margin-top: .5rem; }
+#context select { font: inherit; padding: .4rem .5rem; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 4px; width: 100%; }
+
+h3.lettershead { font-family: Georgia, serif; font-size: 1.05rem; margin: 2rem 0 .4rem; }
+
+.disclaimer {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.15rem; margin-top: 2.5rem;
+  background: var(--surface); font-size: .9rem; color: var(--ink-soft);
+}
+.disclaimer strong { color: var(--ink); }
+.disclaimer ul { padding-left: 1.1rem; }
+
+footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--line);
+         font-size: .85rem; color: var(--ink-soft); }
+a { color: var(--accent); }
+.hidden { display: none; }

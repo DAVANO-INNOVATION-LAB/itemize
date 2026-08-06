@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>itemize — review an itemized medical bill</title>
+<meta name="description" content="Check an itemized medical bill against public CMS data. Runs entirely in your browser; your bill is never uploaded.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>itemize</h1>
+  <p class="tagline">Check an itemized medical bill against public federal data — duplicate
+  charges, unspecified codes, and drug prices compared to what Medicare allows.</p>
+</header>
+
+<div class="privacy">
+  <strong>Your bill never leaves this device.</strong> There is no upload, no account and no
+  server. Everything below runs in your browser, and you can disconnect from the internet
+  before pasting if you prefer. The page works offline once loaded.
+</div>
+
+<h2>1. Your situation</h2>
+<p class="hint">Who is exposed to the charge changes which findings matter — and it decides
+whether you have rights that outrank any coding question. Every answer is optional and
+nothing is assumed if you skip it. These answers stay on this device.</p>
+
+<div id="context">
+  <fieldset>
+    <legend>Are you insured for this care?</legend>
+    <label><input type="radio" name="insured" value="" checked> Rather not say</label>
+    <label><input type="radio" name="insured" value="yes"> Insured</label>
+    <label><input type="radio" name="insured" value="no"> Uninsured / paying cash</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Have you met your deductible?</legend>
+    <label><input type="radio" name="deductible" value="" checked> Rather not say</label>
+    <label><input type="radio" name="deductible" value="yes"> Met</label>
+    <label><input type="radio" name="deductible" value="no"> Not met</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Anything else true of this bill?</legend>
+    <label><input type="checkbox" id="emergency"> It was emergency care</label>
+    <label><input type="checkbox" id="oon"> The provider was out of network</label>
+    <label><input type="checkbox" id="innetfac"> …at an in-network facility</label>
+    <label><input type="checkbox" id="nonprofit"> Billed by a non-profit hospital</label>
+    <label><input type="checkbox" id="ambulance"> Includes a ground ambulance ride</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Is your plan fully insured or self-funded?</legend>
+    <label><input type="radio" name="funding" value="" checked> Don't know / not applicable</label>
+    <label><input type="radio" name="funding" value="fully_insured"> Fully insured</label>
+    <label><input type="radio" name="funding" value="self_funded"> Self-funded (employer pays claims)</label>
+    <p class="hint small">This one question decides whether your state's protections
+    reach you at all — state insurance law generally does not apply to self-funded
+    employer plans. Your HR or benefits booklet will say which you have.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Optional details</legend>
+    <label class="inline">Good Faith Estimate amount
+      <input type="text" id="gfe" inputmode="decimal" placeholder="e.g. 1200.00"></label>
+    <label class="inline">State
+      <select id="state">
+      <option value="">Rather not say</option>
+      <option value="AL">Alabama — not yet researched</option>
+      <option value="AK">Alaska — not yet researched</option>
+      <option value="AZ">Arizona — not yet researched</option>
+      <option value="AR">Arkansas — not yet researched</option>
+      <option value="CA">California</option>
+      <option value="CO">Colorado</option>
+      <option value="CT">Connecticut</option>
+      <option value="DE">Delaware</option>
+      <option value="DC">District of Columbia — not yet researched</option>
+      <option value="FL">Florida</option>
+      <option value="GA">Georgia — not yet researched</option>
+      <option value="HI">Hawaii — not yet researched</option>
+      <option value="ID">Idaho — not yet researched</option>
+      <option value="IL">Illinois</option>
+      <option value="IN">Indiana — not yet researched</option>
+      <option value="IA">Iowa — not yet researched</option>
+      <option value="KS">Kansas — not yet researched</option>
+      <option value="KY">Kentucky — not yet researched</option>
+      <option value="LA">Louisiana — not yet researched</option>
+      <option value="ME">Maine</option>
+      <option value="MD">Maryland</option>
+      <option value="MA">Massachusetts</option>
+      <option value="MI">Michigan — not yet researched</option>
+      <option value="MN">Minnesota</option>
+      <option value="MS">Mississippi — not yet researched</option>
+      <option value="MO">Missouri — not yet researched</option>
+      <option value="MT">Montana — not yet researched</option>
+      <option value="NE">Nebraska — not yet researched</option>
+      <option value="NV">Nevada</option>
+      <option value="NH">New Hampshire</option>
+      <option value="NJ">New Jersey</option>
+      <option value="NM">New Mexico — not yet researched</option>
+      <option value="NY">New York</option>
+      <option value="NC">North Carolina — not yet researched</option>
+      <option value="ND">North Dakota</option>
+      <option value="OH">Ohio</option>
+      <option value="OK">Oklahoma — not yet researched</option>
+      <option value="OR">Oregon</option>
+      <option value="PA">Pennsylvania — not yet researched</option>
+      <option value="RI">Rhode Island</option>
+      <option value="SC">South Carolina</option>
+      <option value="SD">South Dakota — not yet researched</option>
+      <option value="TN">Tennessee — not yet researched</option>
+      <option value="TX">Texas</option>
+      <option value="UT">Utah</option>
+      <option value="VT">Vermont</option>
+      <option value="VA">Virginia — not yet researched</option>
+      <option value="WA">Washington</option>
+      <option value="WV">West Virginia</option>
+      <option value="WI">Wisconsin — not yet researched</option>
+      <option value="WY">Wyoming — not yet researched</option>
+      </select></label>
+  </fieldset>
+</div>
+
+<h2>2. Paste your itemized bill</h2>
+<p class="hint">A spreadsheet export (CSV) works best. Text copied out of a PDF also works.
+If your statement shows only department totals, that is <em>not</em> an itemized bill —
+ask the billing office for one showing a code, quantity and charge on every line.</p>
+
+<div id="dropzone">
+  <label for="bill" class="hidden">Itemized bill text</label>
+  <textarea id="bill" spellcheck="false" autocapitalize="off" autocorrect="off"
+    autocomplete="off" placeholder="Date,Code,Description,Qty,Charges
+2026-03-14,J1885,KETOROLAC TROMETHAMINE INJ 15MG,2,180.00
+2026-03-14,A9270,SELF ADMIN DRUG - NON COVERED,1,142.50
+…
+
+…or drop a PDF or CSV file here."></textarea>
+
+  <div class="controls">
+    <button id="run">Review this bill</button>
+    <label class="filebtn">Open a file…<input type="file" id="file"
+      accept=".csv,.tsv,.txt,.pdf,application/pdf,text/csv,text/plain"></label>
+    <button id="demo" class="secondary">Load an example</button>
+    <button id="clear" class="secondary">Clear</button>
+  </div>
+  <p id="filestatus" class="filestatus" role="status" aria-live="polite"></p>
+</div>
+
+<h2>3. Your Explanation of Benefits (optional, but the strongest check)</h2>
+<p class="hint">If you are insured, add the EOB your plan sent. If the provider is billing
+you more than the EOB says you owe, that is the clearest error there is — and it is the
+one your insurer will not catch for you.</p>
+<div class="controls">
+  <label class="filebtn">Add an EOB file…<input type="file" id="eobfile"
+    accept=".csv,.tsv,.txt,.pdf,application/pdf,text/csv,text/plain"></label>
+</div>
+<p id="eobstatus" class="filestatus" role="status" aria-live="polite"></p>
+
+<section id="results" class="hidden" aria-live="polite">
+  <h2>4. What we found</h2>
+  <div class="summary" id="summary"></div>
+  <div id="findings"></div>
+
+  <h2>Lines reviewed</h2>
+  <div class="scroll"><table id="linetable">
+    <thead><tr><th>#</th><th>Date</th><th>Code</th><th>Description</th>
+      <th class="num">Units</th><th class="num">Charge</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+
+  <h2>5. Take it to the billing office</h2>
+  <p class="hint">Download a plain evidence packet listing every finding with the federal
+  file it came from. A billing office ignores an unsourced complaint; this one cites its
+  sources.</p>
+  <div class="controls">
+    <button id="download">Download evidence packet (.md)</button>
+  </div>
+
+  <h3 class="lettershead">Draft letters for your situation</h3>
+  <p class="hint">Drafts, not legal documents. Your own facts stay in [square brackets]
+  so nothing is asserted on your behalf that you have not checked.</p>
+  <div class="controls" id="letters"></div>
+</section>
+
+<div class="disclaimer">
+  <strong>What this is, and what it is not.</strong>
+  <p>itemize is an open-source tool. It gives you <strong>information, not advice</strong> —
+  not legal, medical or financial advice — and it cannot tell you what you owe.</p>
+  <ul>
+    <li><strong>A Medicare benchmark is not a price cap.</strong> Hospitals are not required
+    to bill Medicare rates, and commercial rates are legitimately higher. A large multiple is
+    grounds to ask questions and to request financial assistance. It is not proof of an error.</li>
+    <li><strong>No findings does not mean the bill is correct.</strong> It means these
+    particular checks did not fire.</li>
+    <li>Lines coded with CPT codes are <strong>not</strong> benchmarked here. Those codes are
+    copyright the American Medical Association and this tool does not redistribute them.
+    See <a href="https://github.com/">NOTICE</a> and the <code>itemize ncci</code> command.</li>
+  </ul>
+</div>
+
+<footer>
+  <p id="provenance">Reference data: loading…</p>
+  <p>Open source. Verify anything here before relying on it — every finding names its source
+  so that you can.</p>
+</footer>
+
+</div>
+<script src="rules.js"></script>
+<script src="pdf.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

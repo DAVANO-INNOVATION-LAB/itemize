@@ -1,0 +1,168 @@
+{
+  "_meta": {
+    "schema_version": 1,
+    "stale_after_days": 365,
+    "built": "2026-08-05",
+    "note": "HAND-CURATED. Unlike the other files in this directory, this one is NOT produced by tools/build_data.py from a federal source. Every entry is researched by hand and must carry citations and a `verified` date. Absence of a state means NOT RESEARCHED -- which is never the same as 'no protection'. Do not fill a field with false to make a map look complete.",
+    "known_gaps": [
+      "As of February 2026, 22 states are reported to have ground-ambulance balance-billing protections. 16 are identified by name below. The remaining ~6 are unidentified here and are deliberately left null rather than guessed.",
+      "Charity-care thresholds are recorded only where a source names them. Many states have requirements not captured here.",
+      "Statutes of limitations, medical-debt credit-reporting rules and wage-garnishment limits are largely unmodelled."
+    ],
+    "applies_only_to_state_regulated_plans": "State insurance law generally does not reach self-funded (ERISA) employer plans, which cover roughly two-thirds of workers with employer coverage. Every state protection below is gated on the reader's plan being fully insured."
+  },
+  "states": {
+    "MA": {
+      "name": "Massachusetts",
+      "ambulance_balance_billing": null,
+      "surprise_billing_law": true,
+      "charity_care": {
+        "applies_to": "nonprofit",
+        "free_care_fpl": 200,
+        "note": "The Attorney General's Community Benefits Guidelines set expectations beyond federal 501(r), including free care at or below 200% FPL."
+      },
+      "state_program": {
+        "name": "Health Safety Net",
+        "fpl_ceiling": 300,
+        "note": "State program that pays hospitals and community health centres directly for medically necessary care for eligible uninsured and underinsured residents."
+      },
+      "all_payer_rate_setting": false,
+      "citations": [
+        "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026",
+        "https://hilltopinstitute.org/wp-content/uploads/hcbp/hcbp_docs/HCBP_CBL_MA.pdf"
+      ],
+      "verified": "2026-08-05"
+    },
+    "SC": {
+      "name": "South Carolina",
+      "ambulance_balance_billing": false,
+      "surprise_billing_law": false,
+      "charity_care": {
+        "applies_to": null,
+        "free_care_fpl": null,
+        "note": "No comprehensive state mandate identified; assistance generally comes from an individual hospital's own policy under federal 501(r)."
+      },
+      "state_program": null,
+      "all_payer_rate_setting": false,
+      "debt_sol_years": 3,
+      "citations": [
+        "https://doi.sc.gov/1001/No-Surprises-Act-Information",
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"
+      ],
+      "verified": "2026-08-05"
+    },
+    "MD": {
+      "name": "Maryland",
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Reported to cover private ambulance services only.",
+      "surprise_billing_law": null,
+      "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals, not only tax-exempt ones." },
+      "state_program": null,
+      "all_payer_rate_setting": true,
+      "all_payer_note": "Maryland sets hospital rates on an all-payer basis, so comparing a charge to a Medicare rate behaves very differently here than elsewhere.",
+      "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them", "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
+      "verified": "2026-08-05"
+    },
+    "CA": {
+      "name": "California",
+      "ambulance_balance_billing": null,
+      "surprise_billing_law": null,
+      "charity_care": {
+        "applies_to": "all",
+        "free_care_fpl": 200,
+        "discount_fpl": 400,
+        "note": "Free care reported below 200% FPL and discounts up to 400% FPL, applying to all hospitals and reported to apply regardless of immigration status or residency."
+      },
+      "state_program": null,
+      "all_payer_rate_setting": false,
+      "citations": ["https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
+      "verified": "2026-08-05"
+    },
+    "WA": {
+      "name": "Washington",
+      "ambulance_balance_billing": true,
+      "surprise_billing_law": null,
+      "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." },
+      "state_program": null,
+      "all_payer_rate_setting": false,
+      "citations": ["https://www.insurance.wa.gov/news/new-billing-protections-ground-ambulance-patients-take-effect", "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
+      "verified": "2026-08-05"
+    },
+    "NY": {
+      "name": "New York",
+      "ambulance_balance_billing": true,
+      "surprise_billing_law": null,
+      "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." },
+      "state_program": null,
+      "all_payer_rate_setting": false,
+      "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them", "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
+      "verified": "2026-08-05"
+    },
+    "IL": {
+      "name": "Illinois",
+      "ambulance_balance_billing": true,
+      "surprise_billing_law": null,
+      "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." },
+      "state_program": null,
+      "all_payer_rate_setting": false,
+      "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them", "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
+      "verified": "2026-08-05"
+    },
+    "ME": {
+      "name": "Maine",
+      "ambulance_balance_billing": true,
+      "surprise_billing_law": null,
+      "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." },
+      "state_program": null,
+      "all_payer_rate_setting": false,
+      "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them", "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
+      "verified": "2026-08-05"
+    },
+    "CO": {
+      "name": "Colorado",
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Reported to cover private ambulance services only.",
+      "surprise_billing_law": null,
+      "charity_care": { "applies_to": null, "free_care_fpl": null, "note": "State-run financial assistance programme reported; details not captured here." },
+      "state_program": { "name": "State financial assistance programme", "fpl_ceiling": null, "note": "Reported to exist; thresholds not verified here." },
+      "all_payer_rate_setting": false,
+      "citations": ["https://leg.colorado.gov/bills/hb24-1218", "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
+      "verified": "2026-08-05"
+    },
+    "TX": {
+      "name": "Texas",
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Protections were due to expire in September 2025; the sunset date was extended to 1 September 2027. Re-verify before relying on this.",
+      "surprise_billing_law": null,
+      "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null },
+      "state_program": null,
+      "all_payer_rate_setting": false,
+      "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"],
+      "verified": "2026-08-05"
+    },
+    "WV": {
+      "name": "West Virginia",
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Current protections reported to apply only to HMOs, with broader protections taking effect in 2027.",
+      "surprise_billing_law": null,
+      "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null },
+      "state_program": null,
+      "all_payer_rate_setting": false,
+      "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"],
+      "verified": "2026-08-05"
+    },
+    "DE": { "name": "Delaware", "ambulance_balance_billing": true, "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
+    "FL": { "name": "Florida", "ambulance_balance_billing": true, "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
+    "OH": { "name": "Ohio", "ambulance_balance_billing": true, "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
+    "VT": { "name": "Vermont", "ambulance_balance_billing": true, "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
+    "ND": { "name": "North Dakota", "ambulance_balance_billing": true, "ambulance_note": "Enacted in 2025.", "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
+    "UT": { "name": "Utah", "ambulance_balance_billing": true, "ambulance_note": "Enacted in 2025.", "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
+    "NH": { "name": "New Hampshire", "ambulance_balance_billing": true, "ambulance_note": "Enacted in 2025.", "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.insurance.nh.gov/news-and-media/new-hampshire-insurance-department-applauds-landmark-legislation-ending-surprise"], "verified": "2026-08-05" },
+    "OR": { "name": "Oregon", "ambulance_balance_billing": true, "ambulance_note": "HB 3243 (2025).", "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://dfr.oregon.gov/business/reg/health/pages/ground-ambulance-rate-reporting.aspx"], "verified": "2026-08-05" },
+    "MN": { "name": "Minnesota", "ambulance_balance_billing": false, "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
+    "CT": { "name": "Connecticut", "ambulance_balance_billing": null, "surprise_billing_law": null, "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"], "verified": "2026-08-05" },
+    "NV": { "name": "Nevada", "ambulance_balance_billing": null, "surprise_billing_law": null, "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"], "verified": "2026-08-05" },
+    "NJ": { "name": "New Jersey", "ambulance_balance_billing": null, "surprise_billing_law": null, "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"], "verified": "2026-08-05" },
+    "RI": { "name": "Rhode Island", "ambulance_balance_billing": null, "surprise_billing_law": null, "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"], "verified": "2026-08-05" }
+  }
+}

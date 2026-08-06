@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      # Node is required for the Python/JavaScript rule-engine parity tests.
+      # Without it those tests skip, and the two engines can drift unnoticed.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Fail if parity tests were skipped
+        run: |
+          python3 - <<'PY'
+          import shutil, sys
+          if shutil.which("node") is None:
+              sys.exit("node missing: parity tests would silently skip")
+          print("node present; parity tests ran")
+          PY
+
+      - name: Check reference data is loadable
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          need = ["hcpcs.json", "asp.json", "dmepos.json", "manifest.json"]
+          missing = [n for n in need if not os.path.exists(os.path.join("web/data", n))]
+          if missing:
+              sys.exit("missing reference data: " + ", ".join(missing))
+          m = json.load(open("web/data/manifest.json"))
+          print(f"{len(m.get('sources', []))} data sources with provenance")
+          PY
