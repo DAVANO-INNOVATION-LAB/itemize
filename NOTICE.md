@@ -69,3 +69,32 @@ protection in the United States (17 U.S.C. § 105). CMS's own HCPCS Level II
 codes and published payment amounts fall in that category. This does not extend
 to the AMA and ADA material CMS redistributes under licence, which is why the
 filter in `tools/build_data.py` exists.
+
+## Hospital price transparency files (`--mrf`)
+
+A hospital's machine-readable file contains CPT codes, because the hospital
+publishes them under its own licence and its own attestation.
+
+`itemize` never redistributes any of it:
+
+* the file is fetched or read **by the reader, on the reader's machine**, from
+  the hospital the reader is dealing with;
+* only the codes already on the reader's own bill are retained, and only in
+  memory for the length of the comparison;
+* nothing from an MRF is cached, written to disk by this tool, or shipped in
+  this repository.
+
+Reading your own hospital's published price file to check your own bill is not
+redistribution. Bundling that file, or a derived index of it, into a project
+would be — so this project does not, and a fork should not either.
+
+The fixtures under `tests/fixtures/mrf_sample.*` are hand-written synthetic
+files. They contain one CPT-shaped number (`99283`) as a structural placeholder,
+with no AMA descriptor text, for the sole purpose of testing that the reader
+parses the schema.
+
+## Practice bills (`itemize teach`)
+
+Everything in `itemize/teaching.py` is synthetic and hand-written. No real
+patient bill, and no protected health information, is included in this
+repository or has been used to produce it.

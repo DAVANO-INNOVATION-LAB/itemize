@@ -1,0 +1,7 @@
+Example Regional Medical Center,1 Example Way,2.2.0,2026-01-01
+hospital_name,hospital_address,version,last_updated_on
+description,code|1,code|1|type,setting,standard_charge|gross,standard_charge|discounted_cash,standard_charge|min,standard_charge|max
+KETOROLAC TROMETHAMINE INJECTION 15 MG,J1885,HCPCS,outpatient,92.00,24.50,8.10,61.00
+SURGICAL TRAY,A4550,HCPCS,outpatient,40.00,16.00,5.00,28.00
+EMERGENCY DEPARTMENT VISIT LEVEL 3,99283,CPT,outpatient,1210.00,605.00,240.00,890.00
+CRUTCHES UNDERARM PAIR,E0114,HCPCS,outpatient,88.00,,30.00,70.00

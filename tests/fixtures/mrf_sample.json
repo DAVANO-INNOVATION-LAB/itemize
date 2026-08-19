@@ -1,0 +1,55 @@
+{
+  "hospital_name": "Example Regional Medical Center",
+  "last_updated_on": "2026-01-01",
+  "version": "2.2.0",
+  "hospital_address": ["1 Example Way"],
+  "affirmation": {"affirmation": "To the best of its knowledge and belief, the hospital has included all applicable standard charge information.", "confirm_affirmation": true},
+  "standard_charge_information": [
+    {
+      "description": "KETOROLAC TROMETHAMINE INJECTION 15 MG",
+      "code_information": [{"code": "J1885", "type": "HCPCS"}],
+      "standard_charges": [
+        {"setting": "outpatient", "billing_class": "facility",
+         "gross_charge": 92.00, "discounted_cash": 24.50,
+         "minimum": 8.10, "maximum": 61.00,
+         "payers_information": [
+           {"payer_name": "Example Health", "plan_name": "PPO", "standard_charge_dollar": 31.20}
+         ]}
+      ]
+    },
+    {
+      "description": "SURGICAL TRAY",
+      "code_information": [{"code": "A4550", "type": "HCPCS"}],
+      "standard_charges": [
+        {"setting": "outpatient", "billing_class": "facility",
+         "gross_charge": 40.00, "discounted_cash": 16.00,
+         "minimum": 5.00, "maximum": 28.00}
+      ]
+    },
+    {
+      "description": "EMERGENCY DEPARTMENT VISIT LEVEL 3",
+      "code_information": [{"code": "99283", "type": "CPT"}],
+      "standard_charges": [
+        {"setting": "outpatient", "billing_class": "facility",
+         "gross_charge": 1210.00, "discounted_cash": 605.00,
+         "minimum": 240.00, "maximum": 890.00}
+      ]
+    },
+    {
+      "description": "CRUTCHES UNDERARM PAIR",
+      "code_information": [{"code": "E0114", "type": "HCPCS"}],
+      "standard_charges": [
+        {"setting": "outpatient", "billing_class": "facility",
+         "gross_charge": 88.00, "minimum": 30.00, "maximum": 70.00}
+      ]
+    },
+    {
+      "description": "UNRELATED PROCEDURE WITH A } BRACE IN THE TEXT",
+      "code_information": [{"code": "Q9999", "type": "HCPCS"}],
+      "standard_charges": [
+        {"setting": "inpatient", "billing_class": "facility",
+         "gross_charge": 5.00, "discounted_cash": 2.00}
+      ]
+    }
+  ]
+}

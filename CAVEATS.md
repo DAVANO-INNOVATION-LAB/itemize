@@ -31,13 +31,32 @@ billed at 300× the Medicare allowance is *grounds to ask questions* and useful
 leverage in a financial-assistance request. It is **not** proof of an error, and
 `itemize` never reports it as one.
 
-Only three kinds of finding are treated as directly disputable:
+Only four kinds of finding are treated as directly disputable:
 
 * exact duplicate line items,
 * a bill exceeding your own EOB's stated patient responsibility,
-* a bill exceeding a Good Faith Estimate by $400 or more.
+* a bill exceeding a Good Faith Estimate by $400 or more,
+* a line billed above the hospital's **own published gross charge** (`--mrf`).
 
-Everything else is a question to ask.
+Everything else is a question to ask — including a line billed above the
+hospital's published *cash* price. That is the strongest question this tool can
+put, because it is the hospital's own attested number rather than a Medicare
+comparison, but a published cash price may carry conditions such as paying in
+full or not billing insurance. It is deliberately **not** counted as
+recoverable, and not only for caution: a duplicated line already reports its own
+recoverable amount, so counting both would claim the same dollars twice.
+
+**NADAC is acquisition cost.** It is what a pharmacy paid a wholesaler for a
+drug, not an allowed amount and not a price anyone is expected to charge. A
+dispensing fee and a real margin belong on top of it, which is why the
+thresholds for NADAC findings are far higher than the ASP ones. NADAC prices per
+`EA`, `ML` or `GM`, and a bill does not always count units the same way — check
+the units before quoting a multiple at anyone.
+
+**The DRG comparison is context, not a dispute.** It carries no dollar amount by
+design, so it can never be added to a recoverable total. Submitted charges are
+list prices that almost nobody pays, and your statement may cover only part of a
+stay or add a professional fee that the DRG average does not include.
 
 **Whole-bill protections are never added to line-item disputes.** An entitlement
 (charity care, a prohibited balance bill) covers the whole balance; summing it
@@ -61,6 +80,18 @@ your state. Your local allowance may differ.
 checks did not fire.
 
 * **Only about a third of HCPCS Level II codes carry any price benchmark.**
+* **NDC pricing needs an NDC on the bill.** Many drug lines do not carry one.
+  A bare 10-digit NDC is declined rather than guessed at — 4-4-2, 5-3-2 and
+  5-4-1 all produce ten digits, and padding the wrong segment silently points at
+  a different drug at a different price.
+* **The MS-DRG table covers only DRGs with enough Medicare discharges** for CMS
+  to publish without identifying patients. A DRG outside it says so rather than
+  going quiet.
+* **`--mrf` depends entirely on the file your hospital published.** Compliance
+  is uneven: roughly 40% of hospitals were reported out of compliance as of
+  April 2026 — files missing, wrongly formatted, or unreadable by CMS's own
+  validation tools. A file that does not parse, or that omits your codes, is
+  reported as exactly that and never as "nothing wrong".
 * **CPT-coded lines are not benchmarked at all** in the open tier — and on a
   typical hospital bill, that is most lines. See §4.
 * **Laboratory work is effectively invisible.** Lab tests are overwhelmingly
@@ -165,9 +196,15 @@ the date in `web/data/manifest.json` and may change.
 
 ## 8. Data freshness
 
-CMS updates HCPCS, ASP and DMEPOS **quarterly**. The shipped reference data is
-a snapshot; `web/data/manifest.json` records the source URL, SHA-256 and
-retrieval date of every file it came from.
+CMS updates HCPCS, ASP and DMEPOS **quarterly**, NADAC **weekly**, and the
+inpatient MS-DRG averages **annually**. The shipped reference data is a
+snapshot; `web/data/manifest.json` records the source URL, SHA-256 and retrieval
+date of every file it came from, and a dataset skipped during a partial rebuild
+keeps its old entry marked `skipped_at` rather than inheriting a build date it
+does not have.
+
+NADAC in particular goes stale fastest and matters least when it does: it moves
+by cents, and the findings built on it fire only at 10× and above.
 
 Re-run `python3 tools/build_data.py --out web/data` to refresh. If you deploy
 this for others, that is your ongoing obligation, not the project's.
@@ -204,9 +241,29 @@ stops your CLI and your web app telling the same person different things.** Do
 not delete it. Node is required for it to run; CI fails the build rather than
 letting it skip silently.
 
+**It is only as good as the fields it compares.** For a period the harness
+diffed five parsed fields, and in that gap the JS parser was missing a
+`unit_price` header alias: given a bill with a unit-price column, the Python
+engine reported lines where units × price ≠ the charge and the browser reported
+nothing at all. Both engines now emit every field the rules can read and the
+harness diffs all of them. If you add a field to `Line`, add it to
+`parse_shape()` in `tests/test_parity.py` or you have reopened the hole.
+
+`itemize/mrf.py` is deliberately outside this arrangement, like `itemize/ncci.py`
+— both need a file the reader supplies, so neither is a mirrored rule.
+
 ---
 
 ## 11. Scope
+
+### Teaching material
+
+`itemize teach` ships synthetic practice bills. They are hand-written, every
+error in them is deliberate and recorded, and none of them is a real patient
+bill. They are for teaching how to read a bill — not a claim about how often
+these errors occur in the wild, which this project has no data to support.
+
+### Scope
 
 `itemize` reviews a bill. It does not:
 

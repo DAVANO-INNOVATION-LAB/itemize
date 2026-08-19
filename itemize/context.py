@@ -25,6 +25,10 @@ class Context:
     ground_ambulance: bool = None        # bill includes a ground ambulance ride
     good_faith_estimate: float = None    # dollar amount of a GFE, if given
     state: str = ""
+    # MS-DRG for an inpatient stay. It sits on a UB-04 (form locator 71) but is
+    # usually absent from the patient-friendly statement, so it is asked for
+    # rather than derived -- itemize does not group a bill into a DRG itself.
+    drg: str = ""
     # "fully_insured" | "self_funded" | None. Gates every state protection:
     # state insurance law generally does not reach self-funded ERISA plans,
     # which cover roughly two-thirds of workers with employer coverage.

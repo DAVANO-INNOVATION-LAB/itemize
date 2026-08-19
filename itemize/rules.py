@@ -17,7 +17,7 @@ import re
 from collections import defaultdict
 
 from .context import Context
-from .model import Finding, classify
+from .model import Finding, classify, normalize_drg
 
 # Modifiers that most often carry an unbundling argument with them.
 MODIFIER_NOTES = {
@@ -64,6 +64,15 @@ ASP_NOTICE_MULTIPLE = 3.0
 ASP_HIGH_MULTIPLE = 10.0
 DME_NOTICE_MULTIPLE = 3.0
 DME_HIGH_MULTIPLE = 10.0
+# NADAC is acquisition cost -- what the pharmacy paid the wholesaler -- not an
+# allowed amount. A dispensing fee and a real margin sit on top of it legitimately,
+# so a multiple that would be alarming against an ASP payment limit is unremarkable
+# here. These thresholds are deliberately far higher than the ASP ones.
+NADAC_NOTICE_MULTIPLE = 10.0
+NADAC_HIGH_MULTIPLE = 50.0
+# Multiple of the national average submitted charge for a DRG at which an
+# inpatient bill is worth questioning.
+DRG_NOTICE_MULTIPLE = 2.0
 
 
 def _key(line):
@@ -329,6 +338,120 @@ def rule_dmepos_benchmark(lines, ref, ctx=None):
     return out
 
 
+def rule_nadac_benchmark(lines, ref, ctx=None):
+    """Compare drug lines carrying an NDC against what pharmacies pay to buy them.
+
+    This reaches the outpatient pharmacy side that Part B ASP cannot: ASP covers
+    roughly 900 physician-administered J-codes, NADAC covers ~32,000 NDCs. Where
+    a line has both, ASP wins and this rule stands down -- reporting the same
+    dollars twice would inflate the implicated total.
+    """
+    if not ref.nadac:
+        return []
+    cite = ref.cite("nadac")
+    groups = defaultdict(list)
+    for ln in lines:
+        if not ln.ndc:
+            continue
+        if ref.asp_limit(ln.code)[0]:
+            continue                      # already priced against ASP
+        rec = ref.nadac_price(ln.ndc)
+        if not rec:
+            continue
+        price = rec[0]
+        if not price or price <= 0 or ln.charge <= 0:
+            continue
+        allowed = price * (ln.units or 1)
+        if allowed <= 0 or ln.charge / allowed < NADAC_NOTICE_MULTIPLE:
+            continue
+        groups[(ln.ndc, round(ln.units, 3), round(ln.charge, 2))].append(ln)
+
+    out = []
+    for (ndc, units, charge), grp in groups.items():
+        price, unit, desc, brand = ref.nadac_price(ndc)
+        allowed = price * (units or 1)
+        mult = charge / allowed
+        idxs = [l.idx for l in grp]
+        where = (f"Line {idxs[0]}" if len(idxs) == 1
+                 else f"Lines {', '.join(str(i) for i in idxs)} (each)")
+        unit_label = {"EA": "each", "ML": "per mL", "GM": "per gram"}.get(unit, unit or "per unit")
+        out.append(Finding(
+            rule="nadac_benchmark",
+            severity="high" if mult >= NADAC_HIGH_MULTIPLE else "warn",
+            title=f"NDC {ndc} billed at {mult:,.0f}x what pharmacies pay for it",
+            detail=(f"{where}: {units:g} unit(s) of "
+                    f"{desc or 'this drug'} (NDC {ndc}) billed at ${charge:,.2f}. "
+                    f"The national average acquisition cost is ${price:,.5f} "
+                    f"{unit_label}, so the same quantity costs about ${allowed:,.2f} "
+                    "to buy. NADAC is what a pharmacy pays a wholesaler, not an "
+                    "allowed amount -- a dispensing fee and a real margin belong on "
+                    "top of it, so this is not an error. A multiple this large is "
+                    "still worth asking about, and is strong support for a "
+                    "financial-assistance request. "
+                    "Check the units: NADAC prices " + unit_label + ", and a bill "
+                    "does not always count units the same way."),
+            lines=idxs,
+            citation=cite,
+            amount=charge * len(grp),
+        ))
+    return out
+
+
+def rule_drg_benchmark(lines, ref, ctx=None):
+    """Compare an inpatient bill against the national average charge for its DRG.
+
+    Whole-bill context, never a line-item dispute: amount stays zero so this can
+    never be added to a recoverable total.
+    """
+    if ctx is None or not getattr(ctx, "drg", "") or not ref.drg:
+        return []
+    stats = ref.drg_stats(ctx.drg)
+    code = normalize_drg(ctx.drg)
+    if not stats:
+        return [Finding(
+            rule="drg_unknown",
+            severity="notice",
+            title=f"DRG {code} is not in the national averages we ship",
+            detail=("The CMS file covers DRGs with enough Medicare discharges to "
+                    "publish without identifying patients. Yours is not in it, so "
+                    "no comparison is possible here. Confirm the DRG with the "
+                    "billing office -- it is form locator 71 on a UB-04."),
+            lines=[],
+            citation=ref.cite("drg"),
+        )]
+
+    total = sum(l.charge for l in lines)
+    avg = stats.get("charge") or 0
+    if total <= 0 or avg <= 0:
+        return []
+    mult = total / avg
+    pay = stats.get("pay")
+    high = mult >= DRG_NOTICE_MULTIPLE
+    body = (f"Your bill totals ${total:,.2f}. Across {stats.get('n', 0):,} Medicare "
+            f"discharges nationally, hospitals submitted an average charge of "
+            f"${avg:,.2f} for DRG {code} ({stats.get('desc', '')})"
+            + (f", and were paid an average of ${pay:,.2f}." if pay else ".")
+            + " Submitted charges are list prices that almost nobody pays; the gap "
+              "between the two columns is the ordinary state of hospital billing, "
+              "not evidence of an error.")
+    if high:
+        body += (f" Yours is {mult:,.1f}x the national average charge, which is "
+                 "worth asking about — but confirm first that this statement covers "
+                 "the whole stay and nothing else, because a partial bill or an "
+                 "added professional fee will skew the comparison.")
+    else:
+        body += (f" Yours is {mult:,.2f}x that average, which is unremarkable.")
+    return [Finding(
+        rule="drg_benchmark",
+        severity="notice" if high else "info",
+        title=(f"Bill is {mult:,.1f}x the national average charge for DRG {code}"
+               if high else f"Bill is in line with the national average for DRG {code}"),
+        detail=body,
+        lines=[],
+        citation=ref.cite("drg"),
+    )]
+
+
 def rule_modifier_flags(lines, ref, ctx=None):
     """Modifiers are parsed off the bill; these are the ones worth asking about."""
     out = []
@@ -412,7 +535,9 @@ def rule_unit_price_arithmetic(lines, ref, ctx=None):
 RULES = (
     rule_exact_duplicates,
     rule_asp_benchmark,
+    rule_nadac_benchmark,
     rule_dmepos_benchmark,
+    rule_drg_benchmark,
     rule_modifier_flags,
     rule_revenue_code_mismatch,
     rule_unit_price_arithmetic,
@@ -427,7 +552,7 @@ SEV_ORDER = {"high": 0, "warn": 1, "notice": 2, "info": 3}
 
 
 # Findings whose importance depends on who is actually paying.
-PRICE_RULES = {"asp_benchmark", "dmepos_benchmark"}
+PRICE_RULES = {"asp_benchmark", "dmepos_benchmark", "nadac_benchmark"}
 
 
 def apply_context(findings, ctx):
@@ -452,6 +577,80 @@ def apply_context(findings, ctx):
             f.detail += (" You told us you are exposed to the full amount, so this "
                          "gap is money you would actually pay.")
     return findings
+
+
+# What to do first.
+#
+# Findings arrive sorted by severity, which is a reading order, not an action
+# plan: a reader with nine findings still cannot tell which one to act on. These
+# are ordered by what actually moves a balance, and capped -- a list of nine
+# "next steps" is the same problem again.
+#
+# Order matters and is not severity order. Asking for an itemized bill outranks
+# everything because the rest cannot be checked without one.
+ACTION_SPECS = (
+    ("itemized", ("missing_code",), "itemized",
+     "Ask for a fully itemized bill first",
+     "Some lines carry no procedure code, so there is nothing to check them "
+     "against. Every other question here is worth more once you have a "
+     "statement showing a code, a quantity and a charge on every line."),
+    ("eob", ("eob_line_mismatch", "eob_total_mismatch", "eob_line_absent"), "dispute",
+     "Challenge the bill against your own EOB",
+     "Your plan has already decided what you owe. A provider billing more than "
+     "that is the clearest error there is, and your insurer will not catch it "
+     "for you."),
+    ("gfe", ("right_gfe_exceeded",), "gfe",
+     "Start the federal dispute process",
+     "This bill exceeds your Good Faith Estimate by $400 or more, which opens "
+     "patient-provider dispute resolution. Almost nobody uses it, and it costs "
+     "the provider more than settling."),
+    ("dispute", (), "dispute",
+     "Dispute the duplicated and mis-added lines",
+     "These are arithmetic and duplication, not price arguments — the kind of "
+     "finding a billing office corrects rather than debates."),
+    ("nsa", ("right_nsa_emergency", "right_nsa_facility"), None,
+     "Assert your surprise-billing protection",
+     "Federal law may prohibit this balance bill outright, which outranks every "
+     "coding question on this page."),
+    ("charity", ("right_charity_care", "state_charity_all_hospitals",
+                 "state_charity_threshold", "state_assistance_program"), "assistance",
+     "Apply for financial assistance",
+     "A financial assistance policy can cover the whole balance rather than a "
+     "line of it, and applying does not stop you disputing anything else."),
+    ("cash", ("mrf_cash_price",), None,
+     "Ask for the hospital's own published cash price",
+     "This is the hospital's own attested number rather than a Medicare "
+     "comparison, so it is the hardest one for a billing office to wave away."),
+)
+
+MAX_ACTIONS = 3
+
+
+def next_actions(findings, ctx=None, limit=MAX_ACTIONS):
+    """The few things worth doing first, most valuable first.
+
+    Returns dicts with a stable `key` so the browser and the evidence packet
+    present the same plan. Mirrors nextActions in web/rules.js.
+    """
+    fired = {f.rule for f in findings}
+    out = []
+    for key, rules_, letter, title, why in ACTION_SPECS:
+        if key == "dispute":
+            hits = [f for f in findings if f.recoverable and f.lines]
+            if not hits:
+                continue
+            amount = sum(f.amount for f in hits)
+            out.append({"key": key, "title": title, "why": why, "letter": letter,
+                        "amount": round(amount, 2),
+                        "lines": sorted({i for f in hits for i in f.lines})})
+            continue
+        if not (fired & set(rules_)):
+            continue
+        hits = [f for f in findings if f.rule in rules_]
+        out.append({"key": key, "title": title, "why": why, "letter": letter,
+                    "amount": 0.0,
+                    "lines": sorted({i for f in hits for i in f.lines})})
+    return out[:limit]
 
 
 def audit(lines, ref, ctx=None, eob_rows=None):

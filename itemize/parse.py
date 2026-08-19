@@ -30,7 +30,29 @@ ALIASES = {
     "revenue_code": ("revenue code", "rev code", "rev cd", "revcode"),
     "unit_price": ("unit price", "price", "rate", "unit charge", "charge per unit",
                    "unit cost", "each"),
+    "ndc": ("ndc", "ndc code", "ndc number", "national drug code", "drug code"),
 }
+
+RE_NDC_HYPHEN = re.compile(r"\b(\d{4,5})-(\d{3,4})-(\d{1,2})\b")
+RE_NDC_BARE = re.compile(r"\b(\d{11})\b")
+
+
+def normalize_ndc(s):
+    """Normalise a National Drug Code to the 11-digit 5-4-2 form CMS prices in.
+
+    Hyphenated NDCs are zero-padded segment-wise, which is unambiguous. A bare
+    10-digit run is NOT: it could be 4-4-2, 5-3-2 or 5-4-1, and choosing wrong
+    silently points at a different drug at a different price. We decline those
+    rather than guess. Mirrors normalizeNdc in web/rules.js.
+    """
+    t = str(s or "").strip()
+    if not t:
+        return ""
+    m = RE_NDC_HYPHEN.search(t)
+    if m:
+        return m.group(1).zfill(5) + m.group(2).zfill(4) + m.group(3).zfill(2)
+    m = RE_NDC_BARE.search(t)
+    return m.group(1) if m else ""
 
 RE_MONEY = re.compile(r"-?\$?\s*([\d,]+\.\d{2}|[\d,]+)")
 RE_CODE = re.compile(r"\b(\d{5}|[A-Za-z]\d{4})\b")
@@ -117,7 +139,9 @@ def parse_delimited(text):
             idx=len(lines) + 1, code=code, desc=desc,
             units=_num(g("units")), charge=_money(charge_raw),
             date=g("date"), modifiers=mods, revenue_code=g("revenue_code"),
-            unit_price=_money(g("unit_price")), raw=",".join(row)[:300],
+            unit_price=_money(g("unit_price")),
+            ndc=normalize_ndc(g("ndc")) or normalize_ndc(code) or normalize_ndc(desc),
+            raw=",".join(row)[:300],
         ))
     return lines
 
@@ -200,7 +224,8 @@ def parse_text(text):
             if got:
                 code, desc, units, charge, date = got
                 lines.append(Line(idx=len(lines) + 1, code=code, desc=desc,
-                                  units=units, charge=charge, date=date, raw=s[:300]))
+                                  units=units, charge=charge, date=date,
+                                  ndc=normalize_ndc(s), raw=s[:300]))
                 continue
         charge = _money("$" + monies[-1])
         if charge <= 0:
@@ -219,7 +244,8 @@ def parse_text(text):
         desc = re.sub(r"[\d,]*\.?\d*\s*$", "", desc).strip(" .\t-|")
         lines.append(Line(idx=len(lines) + 1, code=code, desc=desc[:160],
                           units=units, charge=charge,
-                          date=dm.group(1) if dm else "", raw=s[:300]))
+                          date=dm.group(1) if dm else "",
+                          ndc=normalize_ndc(s), raw=s[:300]))
     return lines
 
 

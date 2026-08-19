@@ -18,9 +18,14 @@
 
   const ASP_NOTICE_MULTIPLE = 3.0, ASP_HIGH_MULTIPLE = 10.0;
   const DME_NOTICE_MULTIPLE = 3.0, DME_HIGH_MULTIPLE = 10.0;
+  // NADAC is acquisition cost -- what the pharmacy paid the wholesaler -- not an
+  // allowed amount. A dispensing fee and a real margin sit on top of it
+  // legitimately, so these thresholds are deliberately far higher than the ASP ones.
+  const NADAC_NOTICE_MULTIPLE = 10.0, NADAC_HIGH_MULTIPLE = 50.0;
+  const DRG_NOTICE_MULTIPLE = 2.0;
   const GFE_DISPUTE_THRESHOLD = 400.0;
   const SEV_ORDER = { high: 0, warn: 1, notice: 2, info: 3 };
-  const PRICE_RULES = new Set(['asp_benchmark', 'dmepos_benchmark']);
+  const PRICE_RULES = new Set(['asp_benchmark', 'dmepos_benchmark', 'nadac_benchmark']);
 
   const UNCLASSIFIED = {
     J3490: 'Unclassified drugs', J3590: 'Unclassified biologics',
@@ -60,6 +65,15 @@
   const RE_CPT_I = /^\d{5}$/, RE_CPT_II = /^\d{4}F$/, RE_CPT_III = /^\d{4}T$/;
   const RE_CDT = /^D\d{4}$/, RE_HCPCS_II = /^[A-CE-Z]\d{4}$/;
 
+  /* MS-DRG to the 3-digit form CMS keys on, or '' if there isn't one. Leading
+   * zeros are stripped before padding: padStart alone leaves '0470' four
+   * characters long and the lookup silently misses. Mirrors normalize_drg. */
+  function normalizeDrg(drg) {
+    const digits = String(drg == null ? '' : drg).replace(/\D/g, '');
+    if (!digits) return '';
+    return (digits.replace(/^0+/, '') || '0').padStart(3, '0');
+  }
+
   function classify(code) {
     const c = (code || '').trim().toUpperCase();
     if (RE_CPT_I.test(c) || RE_CPT_II.test(c) || RE_CPT_III.test(c)) return 'ama';
@@ -74,9 +88,20 @@
     this.hcpcs = data.hcpcs || {};
     this.asp = data.asp || {};
     this.dmepos = data.dmepos || {};
+    this.nadac = data.nadac || {};
+    this.drg = data.drg || {};
     this.states = data.states || {};
     this.manifest = data.manifest || {};
   }
+  /* (price_per_unit, pricing_unit, description, is_brand) or null. */
+  Reference.prototype.nadacPrice = function (ndc) {
+    const r = this.nadac[String(ndc || '').trim()];
+    return r ? [r.p, r.u || '', r.d || '', !!r.b] : null;
+  };
+  Reference.prototype.drgStats = function (drg) {
+    const code = normalizeDrg(drg);
+    return code ? (this.drg[code] || null) : null;
+  };
   Reference.prototype.describe = function (c) { return this.hcpcs[(c || '').toUpperCase()] || ''; };
   Reference.prototype.aspLimit = function (c) {
     const r = this.asp[(c || '').toUpperCase()];
@@ -101,6 +126,9 @@
     });
     this.good_faith_estimate = (o.good_faith_estimate === undefined) ? null : o.good_faith_estimate;
     this.state = o.state || '';
+    // MS-DRG for an inpatient stay -- UB-04 form locator 71. Asked for, never
+    // derived: itemize does not group a bill into a DRG itself.
+    this.drg = o.drg || '';
     this.plan_funding = o.plan_funding || null;
   }
   Object.defineProperty(Context.prototype, 'self_pay', {
@@ -151,6 +179,9 @@
     date: ['date', 'service date', 'date of service', 'dos', 'svc date'],
     modifiers: ['modifier', 'modifiers', 'mod'],
     revenue_code: ['revenue code', 'rev code', 'rev cd', 'revcode'],
+    unit_price: ['unit price', 'price', 'rate', 'unit charge', 'charge per unit',
+      'unit cost', 'each'],
+    ndc: ['ndc', 'ndc code', 'ndc number', 'national drug code', 'drug code'],
   };
 
   function splitRow(line, delim) {
@@ -164,18 +195,6 @@
     }
     out.push(cur);
     return out.map((s) => s.trim());
-  }
-
-  function money(s) {
-    if (s == null) return 0;
-    const m = String(s).match(/-?\$?\s*([\d,]+\.\d{2}|[\d,]+)/);
-    if (!m) return 0;
-    const v = parseFloat(m[1].replace(/,/g, ''));
-    return isNaN(v) ? 0 : v;
-  }
-  function num(s, d = 1) {
-    const v = parseFloat(String(s == null ? '' : s).replace(/,/g, '').trim());
-    return isNaN(v) || v <= 0 ? d : v;
   }
 
   function mapHeaders(header) {
@@ -221,6 +240,8 @@
         units: num(g('units')), charge: money(chargeRaw), date: g('date'),
         modifiers: g('modifiers').split(/[,\s/]+/).filter(Boolean).map((s) => s.toUpperCase()),
         revenue_code: g('revenue_code'),
+        unit_price: money(g('unit_price')),
+        ndc: normalizeNdc(g('ndc')) || normalizeNdc(code) || normalizeNdc(desc),
       });
     }
     return lines;
@@ -228,6 +249,24 @@
 
   const RE_CODEISH = /^[A-Za-z]{0,4}\d{3,6}$/;
   const RE_DATEISH = /\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2})\b/;
+
+  /* National Drug Codes, normalised to the 11-digit 5-4-2 form CMS prices in.
+   *
+   * Hyphenated NDCs are zero-padded segment-wise, which is unambiguous. A bare
+   * 10-digit run is NOT: it could be 4-4-2, 5-3-2 or 5-4-1, and choosing wrong
+   * silently points at a different drug. We decline those rather than guess --
+   * a confident wrong price is the failure mode this project exists to avoid.
+   * Mirrors normalize_ndc in itemize/parse.py. */
+  function normalizeNdc(s) {
+    const t = String(s == null ? '' : s).trim();
+    if (!t) return '';
+    const hy = t.match(/\b(\d{4,5})-(\d{3,4})-(\d{1,2})\b/);
+    if (hy) {
+      return hy[1].padStart(5, '0') + hy[2].padStart(4, '0') + hy[3].padStart(2, '0');
+    }
+    const bare = t.match(/\b(\d{11})\b/);
+    return bare ? bare[1] : '';
+  }
 
   /* Read a line already split into columns (PDF text layers, aligned statements).
    * Positional reading beats pattern-matching one run-on string. Mirrors
@@ -283,6 +322,7 @@
           lines.push({
             idx: lines.length + 1, code: got.code, desc: got.desc, units: got.units,
             charge: got.charge, date: got.date, modifiers: [], revenue_code: '',
+            unit_price: 0, ndc: normalizeNdc(s),
           });
           continue;
         }
@@ -298,6 +338,7 @@
       lines.push({
         idx: lines.length + 1, code: cm ? cm[1].toUpperCase() : '', desc: desc.slice(0, 160),
         units: um ? num(um[1]) : 1, charge, date: dm ? dm[1] : '', modifiers: [], revenue_code: '',
+        unit_price: 0, ndc: normalizeNdc(s),
       });
     }
     return lines;
@@ -444,6 +485,93 @@
 
   const ruleAspBenchmark = (lines, ref) => benchmark(lines, ref, 'asp');
   const ruleDmeposBenchmark = (lines, ref) => benchmark(lines, ref, 'dmepos');
+
+  const NADAC_UNIT_LABEL = { EA: 'each', ML: 'per mL', GM: 'per gram' };
+
+  /* Drug lines carrying an NDC, against what pharmacies pay to acquire them.
+   * Reaches the outpatient pharmacy side ASP cannot: ASP prices ~900
+   * physician-administered J-codes, NADAC ~32,000 NDCs. Where a line has both,
+   * ASP wins and this stands down -- the same dollars must not be counted twice.
+   * Mirrors rule_nadac_benchmark in itemize/rules.py. */
+  function ruleNadacBenchmark(lines, ref) {
+    if (!Object.keys(ref.nadac).length) return [];
+    const groups = {};
+    for (const l of lines) {
+      if (!l.ndc) continue;
+      if (ref.aspLimit(l.code)[0]) continue;
+      const rec = ref.nadacPrice(l.ndc);
+      if (!rec) continue;
+      const price = rec[0];
+      if (!price || price <= 0 || l.charge <= 0) continue;
+      const allowed = price * (l.units || 1);
+      if (allowed <= 0 || l.charge / allowed < NADAC_NOTICE_MULTIPLE) continue;
+      const k = [l.ndc, g(l.units), l.charge.toFixed(2)].join('|');
+      (groups[k] = groups[k] || []).push(l);
+    }
+    const out = [];
+    for (const k of Object.keys(groups)) {
+      const grp = groups[k], l0 = grp[0];
+      const [price, unit, desc] = ref.nadacPrice(l0.ndc);
+      const allowed = price * (l0.units || 1), mult = l0.charge / allowed;
+      const idxs = grp.map((x) => x.idx);
+      const where = idxs.length === 1 ? `Line ${idxs[0]}` : `Lines ${idxs.join(', ')} (each)`;
+      const unitLabel = NADAC_UNIT_LABEL[unit] || unit || 'per unit';
+      out.push(F({
+        rule: 'nadac_benchmark',
+        severity: mult >= NADAC_HIGH_MULTIPLE ? 'high' : 'warn',
+        title: `NDC ${l0.ndc} billed at ${Math.round(mult).toLocaleString()}x what pharmacies pay for it`,
+        detail: `${where}: ${l0.units} unit(s) of ${desc || 'this drug'} (NDC ${l0.ndc}) billed at ${fmt(l0.charge)}. `
+          + `The national average acquisition cost is $${price.toFixed(5)} ${unitLabel}, so the same quantity costs about ${fmt(allowed)} to buy. `
+          + 'NADAC is what a pharmacy pays a wholesaler, not an allowed amount -- a dispensing fee and a real margin belong on top of it, so this is not an error. '
+          + 'A multiple this large is still worth asking about, and is strong support for a financial-assistance request. '
+          + `Check the units: NADAC prices ${unitLabel}, and a bill does not always count units the same way.`,
+        lines: idxs, citation: ref.cite('nadac'), amount: l0.charge * grp.length,
+      }));
+    }
+    return out;
+  }
+
+  /* An inpatient bill against the national average charge for its DRG.
+   * Whole-bill context, never a line dispute: amount stays zero so it can never
+   * be added to a recoverable total. Mirrors rule_drg_benchmark. */
+  function ruleDrgBenchmark(lines, ref, ctx) {
+    if (!ctx || !ctx.drg || !Object.keys(ref.drg).length) return [];
+    const code = normalizeDrg(ctx.drg);
+    const stats = ref.drgStats(ctx.drg);
+    if (!stats) {
+      return [F({
+        rule: 'drg_unknown', severity: 'notice',
+        title: `DRG ${code} is not in the national averages we ship`,
+        detail: 'The CMS file covers DRGs with enough Medicare discharges to publish without identifying patients. '
+          + 'Yours is not in it, so no comparison is possible here. Confirm the DRG with the billing office -- '
+          + 'it is form locator 71 on a UB-04.',
+        lines: [], citation: ref.cite('drg'),
+      })];
+    }
+    const total = sum(lines, (l) => l.charge);
+    const avg = stats.charge || 0;
+    if (total <= 0 || avg <= 0) return [];
+    const mult = total / avg;
+    const high = mult >= DRG_NOTICE_MULTIPLE;
+    let body = `Your bill totals ${fmt(total)}. Across ${(stats.n || 0).toLocaleString()} Medicare discharges nationally, `
+      + `hospitals submitted an average charge of ${fmt(avg)} for DRG ${code} (${stats.desc || ''})`
+      + (stats.pay ? `, and were paid an average of ${fmt(stats.pay)}.` : '.')
+      + ' Submitted charges are list prices that almost nobody pays; the gap between the two columns is the ordinary '
+      + 'state of hospital billing, not evidence of an error.';
+    body += high
+      ? ` Yours is ${mult.toFixed(1)}x the national average charge, which is worth asking about — but confirm first `
+        + 'that this statement covers the whole stay and nothing else, because a partial bill or an added '
+        + 'professional fee will skew the comparison.'
+      : ` Yours is ${mult.toFixed(2)}x that average, which is unremarkable.`;
+    return [F({
+      rule: 'drg_benchmark',
+      severity: high ? 'notice' : 'info',
+      title: high
+        ? `Bill is ${mult.toFixed(1)}x the national average charge for DRG ${code}`
+        : `Bill is in line with the national average for DRG ${code}`,
+      detail: body, lines: [], citation: ref.cite('drg'),
+    })];
+  }
 
   function ruleModifierFlags(lines) {
     const out = [];
@@ -594,7 +722,11 @@
     return out;
   }
 
-  const RULES = [ruleExactDuplicates, ruleAspBenchmark, ruleDmeposBenchmark,
+  // Order mirrors RULES in itemize/rules.py. The final sort is by severity then
+  // amount, so registry order does not affect output -- but keeping them aligned
+  // makes a diff between the two engines readable.
+  const RULES = [ruleExactDuplicates, ruleAspBenchmark, ruleNadacBenchmark,
+    ruleDmeposBenchmark, ruleDrgBenchmark,
     ruleModifierFlags, ruleRevenueCodeMismatch, ruleUnitPriceArithmetic,
     ruleUnclassified, ruleMissingCode, ruleSameCodeSameDay, ruleUnknownCode,
     ruleLicensed];
@@ -828,6 +960,71 @@ Fewer than one per cent of denied claims are appealed. I am appealing this one.
     },
   };
 
+  /* What to do first. Mirrors ACTION_SPECS / next_actions in itemize/rules.py.
+   *
+   * Findings arrive sorted by severity, which is a reading order, not an action
+   * plan. These are ordered by what actually moves a balance, and capped --
+   * a list of nine "next steps" is the same problem again. Asking for an
+   * itemized bill outranks everything because the rest cannot be checked
+   * without one. */
+  const ACTION_SPECS = [
+    ['itemized', ['missing_code'], 'itemized',
+      'Ask for a fully itemized bill first',
+      'Some lines carry no procedure code, so there is nothing to check them against. '
+      + 'Every other question here is worth more once you have a statement showing a '
+      + 'code, a quantity and a charge on every line.'],
+    ['eob', ['eob_line_mismatch', 'eob_total_mismatch', 'eob_line_absent'], 'dispute',
+      'Challenge the bill against your own EOB',
+      'Your plan has already decided what you owe. A provider billing more than that is '
+      + 'the clearest error there is, and your insurer will not catch it for you.'],
+    ['gfe', ['right_gfe_exceeded'], 'gfe',
+      'Start the federal dispute process',
+      'This bill exceeds your Good Faith Estimate by $400 or more, which opens '
+      + 'patient-provider dispute resolution. Almost nobody uses it, and it costs the '
+      + 'provider more than settling.'],
+    ['dispute', [], 'dispute',
+      'Dispute the duplicated and mis-added lines',
+      'These are arithmetic and duplication, not price arguments — the kind of finding a '
+      + 'billing office corrects rather than debates.'],
+    ['nsa', ['right_nsa_emergency', 'right_nsa_facility'], null,
+      'Assert your surprise-billing protection',
+      'Federal law may prohibit this balance bill outright, which outranks every coding '
+      + 'question on this page.'],
+    ['charity', ['right_charity_care', 'state_charity_all_hospitals',
+      'state_charity_threshold', 'state_assistance_program'], 'assistance',
+      'Apply for financial assistance',
+      'A financial assistance policy can cover the whole balance rather than a line of '
+      + 'it, and applying does not stop you disputing anything else.'],
+    ['cash', ['mrf_cash_price'], null,
+      "Ask for the hospital's own published cash price",
+      'This is the hospital’s own attested number rather than a Medicare comparison, '
+      + 'so it is the hardest one for a billing office to wave away.'],
+  ];
+
+  const MAX_ACTIONS = 3;
+
+  function nextActions(findings, ctx, limit) {
+    limit = limit === undefined ? MAX_ACTIONS : limit;
+    const fired = new Set(findings.map((f) => f.rule));
+    const out = [];
+    for (const [key, ruleNames, letter, title, why] of ACTION_SPECS) {
+      let hits;
+      let amount = 0;
+      if (key === 'dispute') {
+        hits = findings.filter((f) => f.recoverable && f.lines.length);
+        if (!hits.length) continue;
+        amount = Math.round(sum(hits, (f) => f.amount) * 100) / 100;
+      } else {
+        if (!ruleNames.some((r) => fired.has(r))) continue;
+        hits = findings.filter((f) => ruleNames.indexOf(f.rule) >= 0);
+      }
+      const lines = Array.from(new Set([].concat(...hits.map((f) => f.lines))))
+        .sort((a, b) => a - b);
+      out.push({ key, title, why, letter, amount, lines });
+    }
+    return out.slice(0, limit);
+  }
+
   function suggestLetters(ctx, findings) {
     const out = [];
     if (findings.some((f) => f.rule === 'missing_code')) out.push('itemized');
@@ -1005,7 +1202,7 @@ Fewer than one per cent of denied claims are appealed. I am appealing this one.
   return {
     classify, Reference, Context, audit, rights, stateFindings, eobCrossCheck, applyContext,
     parseBill, parseDelimited, parseText, parseEob,
-    LETTERS, suggestLetters,
+    LETTERS, suggestLetters, nextActions, MAX_ACTIONS,
     money, num, fmt, RULES, SEV_ORDER,
     ASP_NOTICE_MULTIPLE, ASP_HIGH_MULTIPLE, DME_NOTICE_MULTIPLE, DME_HIGH_MULTIPLE,
     GFE_DISPUTE_THRESHOLD,

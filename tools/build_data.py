@@ -46,6 +46,17 @@ HCPCS_INDEX = ("https://www.cms.gov/medicare/coding-billing/"
 ASP_INDEX = "https://www.cms.gov/medicare/payment/part-b-drugs/asp-pricing-files"
 DMEPOS_INDEX = ("https://www.cms.gov/medicare/payment/fee-schedules/dmepos/"
                 "dmepos-fee-schedule")
+# NADAC: what pharmacies actually pay to acquire a drug, by NDC, surveyed and
+# published weekly. Public domain (usa.gov/publicdomain/label/1.0). This is the
+# only free national price for the outpatient drug side; Part B ASP covers just
+# the ~900 J-codes a physician administers.
+NADAC_METASTORE = ("https://data.medicaid.gov/api/1/metastore/schemas/dataset/"
+                   "items?show-reference-ids=true")
+# MS-DRG average charges by hospital and nationally. MS-DRG and ICD-10-PCS are
+# CMS-maintained US government work -- no AMA licence anywhere in the chain,
+# which is what makes an inpatient benchmark possible in the open tier at all.
+CMS_DATA_JSON = "https://data.cms.gov/data.json"
+DRG_DATASET_TITLE = "Medicare Inpatient Hospitals - by Geography and Service"
 
 # ---- code classification ---------------------------------------------------
 RE_CPT_I = re.compile(r"^\d{5}$")          # AMA CPT Level I
@@ -316,69 +327,273 @@ def build_dmepos(url):
     return out, counts, raw, name
 
 
+# ---- NADAC: national average drug acquisition cost, by NDC ----------------
+def discover_nadac_url():
+    """Latest yearly NADAC dataset's CSV distribution, from the DKAN metastore."""
+    items = json.loads(fetch(NADAC_METASTORE).decode("utf-8", "replace"))
+    best = None
+    for it in items:
+        m = re.match(r"^NADAC \(National Average Drug Acquisition Cost\) (\d{4})$",
+                     it.get("title", ""))
+        if m and (best is None or int(m.group(1)) > best[0]):
+            best = (int(m.group(1)), it)
+    if not best:
+        return None
+    for dist in best[1].get("distribution", []):
+        d = dist.get("data", dist)
+        if (d.get("format") or "").lower() == "csv" and d.get("downloadURL"):
+            return d["downloadURL"]
+    return None
+
+
+def build_nadac(url):
+    """Latest surveyed price per NDC.
+
+    The yearly file is an append-only log of weekly surveys, so one NDC appears
+    many times. We keep only the most recent effective date per NDC -- carrying
+    a stale row forward would price a drug at last winter's cost and call it
+    current.
+    """
+    raw = fetch(url, limit=400_000_000)
+    rows = csv.DictReader(io.StringIO(raw.decode("utf-8", "replace")))
+    latest = {}
+    for r in rows:
+        ndc = (r.get("NDC") or "").strip()
+        if not ndc.isdigit() or len(ndc) != 11:
+            continue
+        try:
+            price = float((r.get("NADAC Per Unit") or "").strip())
+        except ValueError:
+            continue
+        if price <= 0:
+            continue
+        eff = (r.get("Effective Date") or "").strip()
+        try:
+            when = datetime.strptime(eff, "%m/%d/%Y")
+        except ValueError:
+            continue
+        prev = latest.get(ndc)
+        if prev is not None and prev[0] >= when:
+            continue
+        latest[ndc] = (when, {
+            "p": round(price, 5),
+            "u": (r.get("Pricing Unit") or "").strip(),          # EA | ML | GM
+            "d": (r.get("NDC Description") or "").strip()[:44],
+            "b": 1 if (r.get("Classification for Rate Setting") or "").strip().upper()
+                 .startswith("B") else 0,                        # brand vs generic
+        })
+    out = {ndc: rec for ndc, (_when, rec) in latest.items()}
+    newest = max((w for w, _ in latest.values()), default=None)
+    return out, (newest.strftime("%Y-%m-%d") if newest else ""), raw
+
+
+# ---- MS-DRG national average charges ---------------------------------------
+def discover_drg_url():
+    """Newest CSV distribution of the CMS inpatient by-geography dataset."""
+    req = urllib.request.Request(CMS_DATA_JSON, headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=180) as r:
+        cat = json.load(r)
+    for ds in cat.get("dataset", []):
+        if ds.get("title") != DRG_DATASET_TITLE:
+            continue
+        for dist in ds.get("distribution", []):
+            if (dist.get("format") or "").upper() == "CSV" and dist.get("downloadURL"):
+                return dist["downloadURL"]          # first CSV is the newest year
+    return None
+
+
+def build_drg(url):
+    """National average submitted charge and Medicare payment, per MS-DRG.
+
+    The source carries national, state and provider rows; we keep the national
+    ones, which is ~760 records and small enough to ship to the browser. DRG
+    descriptions are CMS's own -- no AMA content, so nothing is filtered here
+    for licensing the way HCPCS descriptions are.
+    """
+    raw = fetch(url, limit=200_000_000)
+    rows = csv.DictReader(io.StringIO(raw.decode("utf-8", "replace")))
+    out = {}
+    for r in rows:
+        if (r.get("Rndrng_Prvdr_Geo_Lvl") or "").strip() != "National":
+            continue
+        drg = (r.get("DRG_Cd") or "").strip()
+        if not drg:
+            continue
+
+        def f(key):
+            try:
+                return float((r.get(key) or "").strip())
+            except ValueError:
+                return None
+
+        charge, total, mdcr = (f("Avg_Submtd_Cvrd_Chrg"), f("Avg_Tot_Pymt_Amt"),
+                               f("Avg_Mdcr_Pymt_Amt"))
+        if charge is None:
+            continue
+        try:
+            n = int(float((r.get("Tot_Dschrgs") or "0").strip()))
+        except ValueError:
+            n = 0
+        out[drg.zfill(3)] = {
+            "desc": (r.get("DRG_Desc") or "").strip(),
+            "charge": round(charge, 2),
+            "pay": round(total, 2) if total is not None else None,
+            "mdcr": round(mdcr, 2) if mdcr is not None else None,
+            "n": n,
+        }
+    return out, raw
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="web/data")
     ap.add_argument("--hcpcs-url", help="pin a specific quarterly HCPCS zip")
     ap.add_argument("--asp-url", help="pin a specific ASP payment-limit zip")
     ap.add_argument("--dmepos-url", help="pin a specific DMEPOS fee-schedule zip")
+    ap.add_argument("--nadac-url", help="pin a specific NADAC csv")
+    ap.add_argument("--drg-url", help="pin a specific CMS inpatient by-geography csv")
+    ap.add_argument("--skip", default="",
+                    help="comma-separated datasets to skip: hcpcs,asp,dmepos,nadac,drg. "
+                         "A skipped dataset keeps the file already on disk and carries "
+                         "its old provenance entry forward, so the manifest never claims "
+                         "a build date the data does not have. NADAC is ~90 MB.")
     args = ap.parse_args()
+    skip = {s.strip().lower() for s in args.skip.split(",") if s.strip()}
 
     os.makedirs(args.out, exist_ok=True)
-    prov = []
+    prev = load_json(os.path.join(args.out, "manifest.json"), {})
+    prev_src = {s.get("dataset"): s for s in prev.get("sources", [])}
+    prov, written = [], []
 
-    hcpcs_url = args.hcpcs_url
-    if not hcpcs_url:
-        links = index_links(HCPCS_INDEX)
-        hcpcs_url = next((l for l in links if "alpha-numeric-hcpcs" in l), None)
-        if not hcpcs_url:
-            raise SystemExit("could not locate HCPCS zip on CMS index page")
-    print(f"HCPCS  <- {hcpcs_url}")
-    codes, ccounts, craw, cmember = build_hcpcs(hcpcs_url)
-    print(f"       kept {len(codes)} public-domain Level II; "
-          f"excluded {ccounts['ama']} CPT / {ccounts['ada']} CDT")
-    prov.append(dict(dataset="hcpcs", url=hcpcs_url, member=cmember,
-                     sha256=sha256(craw), bytes=len(craw),
-                     kept=len(codes), excluded=ccounts))
+    def carry(name):
+        """Keep a skipped dataset's existing provenance rather than dropping it."""
+        old = prev_src.get(name)
+        if old:
+            old = dict(old, skipped_at=datetime.now(timezone.utc)
+                       .strftime("%Y-%m-%dT%H:%M:%SZ"))
+            prov.append(old)
+        print(f"{name.upper():<6} -- skipped; keeping existing file and provenance")
 
-    asp_url = args.asp_url
-    if not asp_url:
-        links = index_links(ASP_INDEX)
-        asp_url = next((l for l in links if "payment-limit" in l), None)
-        if not asp_url:
-            raise SystemExit("could not locate ASP payment-limit zip on CMS index page")
-    print(f"ASP    <- {asp_url}")
-    asp, acounts, araw, amember = build_asp(asp_url)
-    pub = sum(1 for v in asp.values() if "licensed" not in v)
-    print(f"       {len(asp)} payment limits ({pub} with descriptions, "
-          f"{len(asp) - pub} amount-only under AMA/ADA)")
-    prov.append(dict(dataset="asp", url=asp_url, member=amember,
-                     sha256=sha256(araw), bytes=len(araw),
-                     kept=len(asp), excluded=acounts))
-
-    dmepos_url = args.dmepos_url or discover_dmepos_url()
-    if not dmepos_url:
-        print("WARNING: could not locate a DMEPOS fee-schedule zip; skipping. "
-              "Durable medical equipment will have no benchmark.", file=sys.stderr)
-        dmepos = {}
+    # ---- HCPCS Level II ---------------------------------------------------
+    if "hcpcs" in skip:
+        carry("hcpcs")
+        codes = load_json(os.path.join(args.out, "hcpcs.json"), {})
     else:
-        print(f"DMEPOS <- {dmepos_url}")
-        dmepos, dcounts, draw, dmember = build_dmepos(dmepos_url)
-        print(f"       {len(dmepos)} public-domain DMEPOS fee lines "
-              f"(excluded {dcounts['ama']} CPT / {dcounts['ada']} CDT)")
-        prov.append(dict(dataset="dmepos", url=dmepos_url, member=dmember,
-                         sha256=sha256(draw), bytes=len(draw),
-                         kept=len(dmepos), excluded=dcounts))
+        hcpcs_url = args.hcpcs_url
+        if not hcpcs_url:
+            links = index_links(HCPCS_INDEX)
+            hcpcs_url = next((l for l in links if "alpha-numeric-hcpcs" in l), None)
+            if not hcpcs_url:
+                raise SystemExit("could not locate HCPCS zip on CMS index page")
+        print(f"HCPCS  <- {hcpcs_url}")
+        codes, ccounts, craw, cmember = build_hcpcs(hcpcs_url)
+        print(f"       kept {len(codes)} public-domain Level II; "
+              f"excluded {ccounts['ama']} CPT / {ccounts['ada']} CDT")
+        prov.append(dict(dataset="hcpcs", url=hcpcs_url, member=cmember,
+                         sha256=sha256(craw), bytes=len(craw),
+                         kept=len(codes), excluded=ccounts))
+        write(os.path.join(args.out, "hcpcs.json"), codes)
+        written.append("hcpcs.json")
 
-    write(os.path.join(args.out, "dmepos.json"), dmepos)
-    write(os.path.join(args.out, "hcpcs.json"), codes)
-    write(os.path.join(args.out, "asp.json"), asp)
+    # ---- Part B ASP payment limits ---------------------------------------
+    if "asp" in skip:
+        carry("asp")
+    else:
+        asp_url = args.asp_url
+        if not asp_url:
+            links = index_links(ASP_INDEX)
+            asp_url = next((l for l in links if "payment-limit" in l), None)
+            if not asp_url:
+                raise SystemExit("could not locate ASP payment-limit zip on CMS index page")
+        print(f"ASP    <- {asp_url}")
+        asp, acounts, araw, amember = build_asp(asp_url)
+        pub = sum(1 for v in asp.values() if "licensed" not in v)
+        print(f"       {len(asp)} payment limits ({pub} with descriptions, "
+              f"{len(asp) - pub} amount-only under AMA/ADA)")
+        prov.append(dict(dataset="asp", url=asp_url, member=amember,
+                         sha256=sha256(araw), bytes=len(araw),
+                         kept=len(asp), excluded=acounts))
+        write(os.path.join(args.out, "asp.json"), asp)
+        written.append("asp.json")
+
+    # ---- DMEPOS fee schedule ---------------------------------------------
+    if "dmepos" in skip:
+        carry("dmepos")
+    else:
+        dmepos_url = args.dmepos_url or discover_dmepos_url()
+        if not dmepos_url:
+            print("WARNING: could not locate a DMEPOS fee-schedule zip; skipping. "
+                  "Durable medical equipment will have no benchmark.", file=sys.stderr)
+        else:
+            print(f"DMEPOS <- {dmepos_url}")
+            dmepos, dcounts, draw, dmember = build_dmepos(dmepos_url)
+            print(f"       {len(dmepos)} public-domain DMEPOS fee lines "
+                  f"(excluded {dcounts['ama']} CPT / {dcounts['ada']} CDT)")
+            prov.append(dict(dataset="dmepos", url=dmepos_url, member=dmember,
+                             sha256=sha256(draw), bytes=len(draw),
+                             kept=len(dmepos), excluded=dcounts))
+            write(os.path.join(args.out, "dmepos.json"), dmepos)
+            written.append("dmepos.json")
+
+    # ---- NADAC drug acquisition cost -------------------------------------
+    if "nadac" in skip:
+        carry("nadac")
+    else:
+        nadac_url = args.nadac_url or discover_nadac_url()
+        if not nadac_url:
+            print("WARNING: could not locate a NADAC csv; skipping. Drugs identified "
+                  "by NDC will have no acquisition-cost benchmark.", file=sys.stderr)
+        else:
+            print(f"NADAC  <- {nadac_url}")
+            nadac, nadac_asof, nraw = build_nadac(nadac_url)
+            print(f"       {len(nadac)} NDCs at latest surveyed price "
+                  f"(most recent effective date {nadac_asof or 'unknown'})")
+            prov.append(dict(dataset="nadac", url=nadac_url,
+                             member=os.path.basename(nadac_url),
+                             sha256=sha256(nraw), bytes=len(nraw), kept=len(nadac),
+                             excluded={"public": len(nadac), "ama": 0, "ada": 0,
+                                       "unknown": 0},
+                             asof=nadac_asof))
+            write(os.path.join(args.out, "nadac.json"), nadac)
+            written.append("nadac.json")
+
+    # ---- MS-DRG national averages ----------------------------------------
+    if "drg" in skip:
+        carry("drg")
+    else:
+        drg_url = args.drg_url or discover_drg_url()
+        if not drg_url:
+            print("WARNING: could not locate the CMS inpatient by-geography csv; "
+                  "skipping. Inpatient stays will have no DRG benchmark.",
+                  file=sys.stderr)
+        else:
+            print(f"DRG    <- {drg_url}")
+            drg, graw = build_drg(drg_url)
+            print(f"       {len(drg)} national MS-DRG averages")
+            prov.append(dict(dataset="drg", url=drg_url,
+                             member=os.path.basename(drg_url),
+                             sha256=sha256(graw), bytes=len(graw), kept=len(drg),
+                             excluded={"public": len(drg), "ama": 0, "ada": 0,
+                                       "unknown": 0}))
+            write(os.path.join(args.out, "drg.json"), drg)
+            written.append("drg.json")
+
     write(os.path.join(args.out, "manifest.json"), dict(
         built=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         note=("Public-domain subset only. CPT (AMA) and CDT (ADA) codes and "
               "descriptions are excluded by tools/build_data.py. See NOTICE.md."),
         sources=prov))
-    print(f"\nwrote {args.out}/hcpcs.json, asp.json, manifest.json")
+    print(f"\nwrote {', '.join(written + ['manifest.json'])} to {args.out}")
+
+
+def load_json(path, default):
+    if not os.path.exists(path):
+        return default
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
 
 
 def write(path, obj):

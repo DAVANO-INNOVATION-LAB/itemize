@@ -36,10 +36,26 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, sys
-          need = ["hcpcs.json", "asp.json", "dmepos.json", "manifest.json"]
+          need = ["hcpcs.json", "asp.json", "dmepos.json", "nadac.json",
+                  "drg.json", "manifest.json"]
           missing = [n for n in need if not os.path.exists(os.path.join("web/data", n))]
           if missing:
               sys.exit("missing reference data: " + ", ".join(missing))
           m = json.load(open("web/data/manifest.json"))
+          datasets = {s["dataset"] for s in m.get("sources", [])}
+          for d in ("hcpcs", "asp", "dmepos", "nadac", "drg"):
+              if d not in datasets:
+                  sys.exit(f"manifest has no provenance entry for {d}")
           print(f"{len(m.get('sources', []))} data sources with provenance")
           PY
+
+      - name: Fail if a teaching case is no longer solvable
+        run: |
+          set -e
+          for c in $(python3 -c "from itemize import teaching; print(' '.join(c['id'] for c in teaching.CASES))"); do
+            python3 -m itemize.cli teach score "$c" > /dev/null
+          done
+          echo "all teaching cases solved"
+
+      - name: Byte-compile every module
+        run: python3 -m compileall -q itemize tools tests

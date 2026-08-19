@@ -13,7 +13,8 @@
 <header>
   <h1>itemize</h1>
   <p class="tagline">Check an itemized medical bill against public federal data — duplicate
-  charges, unspecified codes, and drug prices compared to what Medicare allows.</p>
+  charges, unspecified codes, and drug prices compared to what Medicare allows and what
+  pharmacies pay.</p>
 </header>
 
 <div class="privacy">
@@ -22,10 +23,41 @@
   before pasting if you prefer. The page works offline once loaded.
 </div>
 
-<h2>1. Your situation</h2>
+<!-- The bill comes first. The questions below it are worth answering, but making
+     someone fill in a twenty-control form before they can do the thing they came
+     to do is how a tool loses the person it was built for. -->
+<h2><span class="step">1</span> Paste your itemized bill</h2>
+<p class="hint">A spreadsheet export (CSV) works best. Text copied out of a PDF also works.
+If your statement shows only department totals, that is <em>not</em> an itemized bill —
+ask the billing office for one showing a code, quantity and charge on every line.</p>
+
+<div id="dropzone">
+  <label for="bill" class="hidden">Itemized bill text</label>
+  <textarea id="bill" spellcheck="false" autocapitalize="off" autocorrect="off"
+    autocomplete="off" placeholder="Date,Code,NDC,Description,Qty,Charges
+2026-03-14,J1885,00409-3799-01,KETOROLAC TROMETHAMINE INJ 15MG,2,180.00
+2026-03-14,A9270,,SELF ADMIN DRUG - NON COVERED,1,142.50
+…
+
+…or drop a PDF or CSV file here."></textarea>
+  <p class="hint small">Recognised columns: date, code, NDC, description, units, unit price,
+  charge, revenue code, modifiers. Column order does not matter.</p>
+
+  <div class="controls">
+    <button id="run">Review this bill</button>
+    <label class="filebtn">Open a file…<input type="file" id="file"
+      accept=".csv,.tsv,.txt,.pdf,application/pdf,text/csv,text/plain"></label>
+    <button id="demo" class="secondary">Load an example</button>
+    <button id="clear" class="secondary">Clear</button>
+  </div>
+  <p id="filestatus" class="filestatus" role="status" aria-live="polite"></p>
+</div>
+
+<h2><span class="step">2</span> Your situation</h2>
 <p class="hint">Who is exposed to the charge changes which findings matter — and it decides
 whether you have rights that outrank any coding question. Every answer is optional and
 nothing is assumed if you skip it. These answers stay on this device.</p>
+<p id="ctxprompt" class="ctxprompt hidden" role="status"></p>
 
 <div id="context">
   <fieldset>
@@ -66,89 +98,18 @@ nothing is assumed if you skip it. These answers stay on this device.</p>
     <label class="inline">Good Faith Estimate amount
       <input type="text" id="gfe" inputmode="decimal" placeholder="e.g. 1200.00"></label>
     <label class="inline">State
-      <select id="state">
-      <option value="">Rather not say</option>
-      <option value="AL">Alabama — not yet researched</option>
-      <option value="AK">Alaska — not yet researched</option>
-      <option value="AZ">Arizona — not yet researched</option>
-      <option value="AR">Arkansas — not yet researched</option>
-      <option value="CA">California</option>
-      <option value="CO">Colorado</option>
-      <option value="CT">Connecticut</option>
-      <option value="DE">Delaware</option>
-      <option value="DC">District of Columbia — not yet researched</option>
-      <option value="FL">Florida</option>
-      <option value="GA">Georgia — not yet researched</option>
-      <option value="HI">Hawaii — not yet researched</option>
-      <option value="ID">Idaho — not yet researched</option>
-      <option value="IL">Illinois</option>
-      <option value="IN">Indiana — not yet researched</option>
-      <option value="IA">Iowa — not yet researched</option>
-      <option value="KS">Kansas — not yet researched</option>
-      <option value="KY">Kentucky — not yet researched</option>
-      <option value="LA">Louisiana — not yet researched</option>
-      <option value="ME">Maine</option>
-      <option value="MD">Maryland</option>
-      <option value="MA">Massachusetts</option>
-      <option value="MI">Michigan — not yet researched</option>
-      <option value="MN">Minnesota</option>
-      <option value="MS">Mississippi — not yet researched</option>
-      <option value="MO">Missouri — not yet researched</option>
-      <option value="MT">Montana — not yet researched</option>
-      <option value="NE">Nebraska — not yet researched</option>
-      <option value="NV">Nevada</option>
-      <option value="NH">New Hampshire</option>
-      <option value="NJ">New Jersey</option>
-      <option value="NM">New Mexico — not yet researched</option>
-      <option value="NY">New York</option>
-      <option value="NC">North Carolina — not yet researched</option>
-      <option value="ND">North Dakota</option>
-      <option value="OH">Ohio</option>
-      <option value="OK">Oklahoma — not yet researched</option>
-      <option value="OR">Oregon</option>
-      <option value="PA">Pennsylvania — not yet researched</option>
-      <option value="RI">Rhode Island</option>
-      <option value="SC">South Carolina</option>
-      <option value="SD">South Dakota — not yet researched</option>
-      <option value="TN">Tennessee — not yet researched</option>
-      <option value="TX">Texas</option>
-      <option value="UT">Utah</option>
-      <option value="VT">Vermont</option>
-      <option value="VA">Virginia — not yet researched</option>
-      <option value="WA">Washington</option>
-      <option value="WV">West Virginia</option>
-      <option value="WI">Wisconsin — not yet researched</option>
-      <option value="WY">Wyoming — not yet researched</option>
-      </select></label>
+      <!-- Options are built from data/states.json at load, so this list can never
+           claim a state is researched when the data file says otherwise. -->
+      <select id="state"><option value="">Rather not say</option></select></label>
+    <label class="inline">MS-DRG (inpatient stays)
+      <input type="text" id="drg" inputmode="numeric" placeholder="e.g. 470"></label>
+    <p class="hint small">The DRG is on a UB-04 at form locator 71, and usually not on a
+    patient-friendly statement — ask the billing office for it. With it, the bill can be
+    compared against CMS's national average charge for the same DRG.</p>
   </fieldset>
 </div>
 
-<h2>2. Paste your itemized bill</h2>
-<p class="hint">A spreadsheet export (CSV) works best. Text copied out of a PDF also works.
-If your statement shows only department totals, that is <em>not</em> an itemized bill —
-ask the billing office for one showing a code, quantity and charge on every line.</p>
-
-<div id="dropzone">
-  <label for="bill" class="hidden">Itemized bill text</label>
-  <textarea id="bill" spellcheck="false" autocapitalize="off" autocorrect="off"
-    autocomplete="off" placeholder="Date,Code,Description,Qty,Charges
-2026-03-14,J1885,KETOROLAC TROMETHAMINE INJ 15MG,2,180.00
-2026-03-14,A9270,SELF ADMIN DRUG - NON COVERED,1,142.50
-…
-
-…or drop a PDF or CSV file here."></textarea>
-
-  <div class="controls">
-    <button id="run">Review this bill</button>
-    <label class="filebtn">Open a file…<input type="file" id="file"
-      accept=".csv,.tsv,.txt,.pdf,application/pdf,text/csv,text/plain"></label>
-    <button id="demo" class="secondary">Load an example</button>
-    <button id="clear" class="secondary">Clear</button>
-  </div>
-  <p id="filestatus" class="filestatus" role="status" aria-live="polite"></p>
-</div>
-
-<h2>3. Your Explanation of Benefits (optional, but the strongest check)</h2>
+<h2><span class="step">3</span> Your Explanation of Benefits <span class="opt">optional, but the strongest check</span></h2>
 <p class="hint">If you are insured, add the EOB your plan sent. If the provider is billing
 you more than the EOB says you owe, that is the clearest error there is — and it is the
 one your insurer will not catch for you.</p>
@@ -158,31 +119,75 @@ one your insurer will not catch for you.</p>
 </div>
 <p id="eobstatus" class="filestatus" role="status" aria-live="polite"></p>
 
-<section id="results" class="hidden" aria-live="polite">
-  <h2>4. What we found</h2>
+<section id="results" class="hidden">
+  <h2><span class="step">4</span> What we found</h2>
+
+  <!-- The only live region on the page. Announcing the whole results block on every
+       context change makes a screen reader re-read the entire audit each time a box
+       is ticked. -->
+  <p id="resultstatus" class="resultstatus" role="status" aria-live="polite"></p>
+
+  <div id="parsecheck" class="parsecheck hidden">
+    <strong>Check this before you rely on anything below.</strong>
+    <p id="parsecheckbody"></p>
+    <div class="controls">
+      <button id="confirmlines" class="secondary">The lines below match my bill</button>
+      <button id="rejectlines" class="secondary">They don't match</button>
+    </div>
+  </div>
+
   <div class="summary" id="summary"></div>
+
+  <div id="actions"></div>
+
+  <h3 class="findingshead">Every finding</h3>
   <div id="findings"></div>
 
-  <h2>Lines reviewed</h2>
+  <h3 id="linestable">Lines reviewed</h3>
+  <p class="hint">Compare this against your paper bill line by line. A mis-read line
+  produces a confident, sourced, wrong dispute — and that costs you credibility you may
+  only get to spend once.</p>
   <div class="scroll"><table id="linetable">
     <thead><tr><th>#</th><th>Date</th><th>Code</th><th>Description</th>
       <th class="num">Units</th><th class="num">Charge</th></tr></thead>
     <tbody></tbody>
   </table></div>
 
-  <h2>5. Take it to the billing office</h2>
+  <h2><span class="step">5</span> Take it to the billing office</h2>
   <p class="hint">Download a plain evidence packet listing every finding with the federal
   file it came from. A billing office ignores an unsourced complaint; this one cites its
   sources.</p>
   <div class="controls">
-    <button id="download">Download evidence packet (.md)</button>
+    <button id="download" disabled>Download evidence packet (.md)</button>
+    <button id="print" class="secondary">Print / save as PDF</button>
   </div>
+  <p id="downloadhint" class="hint small">Confirm the lines above match your bill to
+  enable the packet.</p>
 
   <h3 class="lettershead">Draft letters for your situation</h3>
   <p class="hint">Drafts, not legal documents. Your own facts stay in [square brackets]
   so nothing is asserted on your behalf that you have not checked.</p>
   <div class="controls" id="letters"></div>
+  <div id="letterbox" class="letterbox hidden">
+    <label for="lettertext" class="hidden">Letter draft</label>
+    <textarea id="lettertext" spellcheck="false" rows="18"></textarea>
+    <div class="controls">
+      <button id="copyletter" class="secondary">Copy to clipboard</button>
+      <button id="downloadletter" class="secondary">Download as .txt</button>
+      <button id="closeletter" class="secondary">Close</button>
+    </div>
+    <p id="copystatus" class="filestatus" role="status" aria-live="polite"></p>
+  </div>
 </section>
+
+<div class="keepbox">
+  <label><input type="checkbox" id="keep"> Keep a working copy of this bill on this device</label>
+  <p class="hint small">Off by default. When on, the text you pasted and the answers above
+  are stored in this browser only — never sent anywhere — so a refresh does not lose your
+  work. On a shared or public computer, leave this off.
+  <button id="forget" class="linkbtn">Delete the stored copy now</button></p>
+  <p id="keepstatus" class="filestatus" role="status" aria-live="polite"></p>
+</div>
 
 <div class="disclaimer">
   <strong>What this is, and what it is not.</strong>
@@ -192,18 +197,21 @@ one your insurer will not catch for you.</p>
     <li><strong>A Medicare benchmark is not a price cap.</strong> Hospitals are not required
     to bill Medicare rates, and commercial rates are legitimately higher. A large multiple is
     grounds to ask questions and to request financial assistance. It is not proof of an error.</li>
+    <li><strong>NADAC is what a pharmacy pays to buy a drug</strong>, not an allowed amount.
+    A dispensing fee and a real margin belong on top of it.</li>
     <li><strong>No findings does not mean the bill is correct.</strong> It means these
     particular checks did not fire.</li>
     <li>Lines coded with CPT codes are <strong>not</strong> benchmarked here. Those codes are
     copyright the American Medical Association and this tool does not redistribute them.
-    See <a href="https://github.com/">NOTICE</a> and the <code>itemize ncci</code> command.</li>
+    See <a href="https://github.com/DAVANO-INNOVATION-LAB/itemize/blob/main/NOTICE.md">NOTICE.md</a>
+    and the <code>itemize ncci</code> command.</li>
   </ul>
 </div>
 
 <footer>
   <p id="provenance">Reference data: loading…</p>
   <p>Open source. Verify anything here before relying on it — every finding names its source
-  so that you can.</p>
+  so that you can. <a href="https://github.com/DAVANO-INNOVATION-LAB/itemize/blob/main/CAVEATS.md">Read the caveats</a>.</p>
 </footer>
 
 </div>

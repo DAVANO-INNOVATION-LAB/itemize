@@ -17,20 +17,29 @@ FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 class FakeRef(Reference):
     """Reference with hand-set tables so rule tests don't depend on a build."""
 
-    def __init__(self, hcpcs=None, asp=None, dmepos=None):
+    def __init__(self, hcpcs=None, asp=None, dmepos=None, nadac=None, drg=None):
         self.dir = "<fake>"
         self.dmepos = dmepos if dmepos is not None else {
             "E0114": {"fee": 67.26, "cat": "IN"}}
         self.hcpcs = hcpcs if hcpcs is not None else {"J1885": "Injection, ketorolac"}
         self.asp = asp if asp is not None else {
             "J1885": {"limit": 0.286, "dose": "15 MG", "desc": "Ketorolac"}}
+        self.nadac = nadac if nadac is not None else {
+            "00093721410": {"p": 0.04231, "u": "EA", "d": "LISINOPRIL 10 MG TABLET", "b": 0}}
+        self.drg = drg if drg is not None else {
+            "470": {"desc": "MAJOR HIP AND KNEE JOINT REPLACEMENT WITHOUT MCC",
+                    "charge": 60000.0, "pay": 13000.0, "mdcr": 12000.0, "n": 400000}}
         self.manifest = {"built": "test", "sources": [
             {"dataset": "asp", "url": "http://example/asp.zip", "member": "asp.csv",
              "sha256": "deadbeef" * 8, "kept": 1},
             {"dataset": "hcpcs", "url": "http://example/h.zip", "member": "h.txt",
              "sha256": "cafe" * 16, "kept": 1},
             {"dataset": "dmepos", "url": "http://example/d.zip", "member": "d.csv",
-             "sha256": "beef" * 16, "kept": 1}]}
+             "sha256": "beef" * 16, "kept": 1},
+            {"dataset": "nadac", "url": "http://example/nadac.csv", "member": "nadac.csv",
+             "sha256": "1234" * 16, "kept": 1},
+            {"dataset": "drg", "url": "http://example/drg.csv", "member": "drg.csv",
+             "sha256": "5678" * 16, "kept": 1}]}
 
 
 class TestClassify(unittest.TestCase):
@@ -276,3 +285,308 @@ class TestRules(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNdcNormalisation(unittest.TestCase):
+    def test_hyphenated_forms_pad_to_eleven_digits(self):
+        from itemize.parse import normalize_ndc
+        self.assertEqual(normalize_ndc("00409-3799-01"), "00409379901")
+        self.assertEqual(normalize_ndc("0409-3799-01"), "00409379901")
+
+    def test_bare_eleven_digits_pass_through(self):
+        from itemize.parse import normalize_ndc
+        self.assertEqual(normalize_ndc("00409379901"), "00409379901")
+
+    def test_three_digit_first_segment_is_not_an_ndc(self):
+        """Labeler codes are 4 or 5 digits; anything shorter is some other number."""
+        from itemize.parse import normalize_ndc
+        self.assertEqual(normalize_ndc("409-3799-1"), "")
+
+    def test_bare_ten_digits_are_declined_not_guessed(self):
+        """4-4-2, 5-3-2 and 5-4-1 all produce ten digits.
+
+        Padding the wrong segment points at a different drug at a different
+        price, and the reader would have no way to see it happened.
+        """
+        from itemize.parse import normalize_ndc
+        self.assertEqual(normalize_ndc("0409379901"), "")
+
+    def test_no_ndc_returns_empty(self):
+        from itemize.parse import normalize_ndc
+        self.assertEqual(normalize_ndc(""), "")
+        self.assertEqual(normalize_ndc("SURGICAL TRAY"), "")
+        self.assertEqual(normalize_ndc(None), "")
+
+
+class TestNadacRule(unittest.TestCase):
+    NDC = "00093721410"          # lisinopril 10 mg, $0.04231 each in FakeRef
+
+    def _line(self, charge, units=30, code="PHRM01"):
+        return Line(idx=1, code=code, desc="LISINOPRIL", units=units,
+                    charge=charge, ndc=self.NDC)
+
+    def test_fires_on_large_multiple_of_acquisition_cost(self):
+        f = rules.rule_nadac_benchmark([self._line(412.50)], FakeRef())
+        self.assertEqual(len(f), 1)
+        self.assertEqual(f[0].rule, "nadac_benchmark")
+        self.assertEqual(f[0].severity, "high")
+
+    def test_ordinary_pharmacy_margin_does_not_fire(self):
+        """NADAC is acquisition cost; a dispensing fee and margin sit on top."""
+        acquisition = 0.04231 * 30
+        f = rules.rule_nadac_benchmark([self._line(acquisition * 4)], FakeRef())
+        self.assertEqual(f, [])
+
+    def test_is_never_recoverable(self):
+        f = rules.rule_nadac_benchmark([self._line(412.50)], FakeRef())
+        self.assertFalse(f[0].recoverable)
+
+    def test_stands_down_when_asp_already_prices_the_line(self):
+        """Both firing would count the same dollars twice in the implicated total."""
+        ln = self._line(412.50, code="J1885")     # J1885 has an ASP limit in FakeRef
+        self.assertEqual(rules.rule_nadac_benchmark([ln], FakeRef()), [])
+        self.assertTrue(rules.rule_asp_benchmark([ln], FakeRef()))
+
+    def test_no_ndc_means_no_finding(self):
+        ln = Line(idx=1, code="PHRM01", units=30, charge=412.50)
+        self.assertEqual(rules.rule_nadac_benchmark([ln], FakeRef()), [])
+
+    def test_unknown_ndc_is_silent_rather_than_guessing(self):
+        ln = Line(idx=1, code="PHRM01", units=1, charge=900.0, ndc="99999999999")
+        self.assertEqual(rules.rule_nadac_benchmark([ln], FakeRef()), [])
+
+    def test_detail_names_the_pricing_unit_caveat(self):
+        f = rules.rule_nadac_benchmark([self._line(412.50)], FakeRef())
+        self.assertIn("not an allowed amount", f[0].detail)
+        self.assertIn("Check the units", f[0].detail)
+
+
+class TestDrgRule(unittest.TestCase):
+    def _lines(self, total):
+        return [Line(idx=1, code="", desc="ROOM AND BOARD", units=1, charge=total)]
+
+    def test_no_drg_in_context_means_no_finding(self):
+        self.assertEqual(rules.rule_drg_benchmark(self._lines(50000), FakeRef(),
+                                                  Context()), [])
+
+    def test_bill_far_above_average_is_raised_as_a_question(self):
+        f = rules.rule_drg_benchmark(self._lines(200000), FakeRef(), Context(drg="470"))
+        self.assertEqual(len(f), 1)
+        self.assertEqual(f[0].rule, "drg_benchmark")
+        self.assertEqual(f[0].severity, "notice")
+
+    def test_bill_near_average_is_reported_as_context_not_alarm(self):
+        f = rules.rule_drg_benchmark(self._lines(60000), FakeRef(), Context(drg="470"))
+        self.assertEqual(f[0].severity, "info")
+
+    def test_never_contributes_a_recoverable_amount(self):
+        """A whole-bill comparison summed with line disputes once produced a
+        'disputable' figure larger than the bill itself. Amount stays zero."""
+        for total in (60000, 200000):
+            f = rules.rule_drg_benchmark(self._lines(total), FakeRef(), Context(drg="470"))
+            self.assertEqual(f[0].amount, 0)
+            self.assertFalse(f[0].recoverable)
+            self.assertEqual(f[0].lines, [])
+
+    def test_unpadded_and_noisy_drg_input_still_matches(self):
+        for given in ("470", "0470", "DRG 470", " 470 "):
+            f = rules.rule_drg_benchmark(self._lines(60000), FakeRef(), Context(drg=given))
+            self.assertEqual(f[0].rule, "drg_benchmark", given)
+
+    def test_unknown_drg_says_so_rather_than_staying_silent(self):
+        f = rules.rule_drg_benchmark(self._lines(60000), FakeRef(), Context(drg="999"))
+        self.assertEqual(f[0].rule, "drg_unknown")
+        self.assertIn("form locator 71", f[0].detail)
+
+    def test_explains_that_submitted_charges_are_not_what_is_paid(self):
+        f = rules.rule_drg_benchmark(self._lines(200000), FakeRef(), Context(drg="470"))
+        self.assertIn("list prices that almost nobody pays", f[0].detail)
+
+
+class TestShippedNewData(unittest.TestCase):
+    """The shipped files must actually be present and shaped as the rules expect."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ref = Reference(os.path.join(os.path.dirname(FIX), "..", "web", "data"))
+        if not cls.ref.nadac or not cls.ref.drg:
+            raise unittest.SkipTest("nadac/drg not built; run tools/build_data.py")
+
+    def test_nadac_records_carry_a_price_and_pricing_unit(self):
+        for ndc, rec in list(self.ref.nadac.items())[:500]:
+            self.assertRegex(ndc, r"^\d{11}$")
+            self.assertGreater(rec["p"], 0)
+            self.assertIn(rec["u"], ("EA", "ML", "GM"))
+
+    def test_drg_keys_are_three_digit_and_carry_a_charge(self):
+        for drg, rec in self.ref.drg.items():
+            self.assertRegex(drg, r"^\d{3}$")
+            self.assertGreater(rec["charge"], 0)
+            self.assertTrue(rec["desc"])
+
+    def test_no_cpt_shaped_code_leaked_into_the_new_tables(self):
+        """DRG codes are 3-digit and NDCs 11-digit; neither namespace can collide
+        with a 5-digit CPT code, but assert it rather than assume it."""
+        for drg in self.ref.drg:
+            self.assertNotEqual(classify(drg), "ama")
+        for ndc in list(self.ref.nadac)[:2000]:
+            self.assertNotEqual(classify(ndc), "ama")
+
+
+class TestMrf(unittest.TestCase):
+    """Hospital price transparency files: streaming readers and the comparison."""
+
+    JSON = os.path.join(FIX, "mrf_sample.json")
+    CSV = os.path.join(FIX, "mrf_sample.csv")
+
+    def setUp(self):
+        from itemize import mrf
+        self.mrf = mrf
+
+    # ---- readers
+    def test_json_reader_finds_every_record(self):
+        idx, scanned = self.mrf.index_for(
+            self.JSON, ["J1885", "A4550", "99283", "E0114", "Q9999"])
+        self.assertEqual(scanned, 5)
+        self.assertEqual(set(idx), {"J1885", "A4550", "99283", "E0114", "Q9999"})
+
+    def test_json_reader_is_not_confused_by_a_brace_inside_a_string(self):
+        """A naive depth counter ends the record early on a '}' in a description."""
+        idx, _ = self.mrf.index_for(self.JSON, ["Q9999"])
+        self.assertIn("BRACE IN THE TEXT", idx["Q9999"]["desc"])
+
+    def test_csv_reader_finds_the_header_under_the_preamble(self):
+        idx, scanned = self.mrf.index_for(self.CSV, ["J1885", "E0114"])
+        self.assertEqual(scanned, 4)
+        self.assertAlmostEqual(idx["J1885"]["cash"], 24.50)
+
+    def test_json_and_csv_of_the_same_data_agree(self):
+        codes = ["J1885", "A4550", "99283", "E0114"]
+        a, _ = self.mrf.index_for(self.JSON, codes)
+        b, _ = self.mrf.index_for(self.CSV, codes)
+        for c in codes:
+            self.assertEqual((a[c]["gross"], a[c]["cash"]),
+                             (b[c]["gross"], b[c]["cash"]), c)
+
+    def test_only_requested_codes_are_retained(self):
+        idx, _ = self.mrf.index_for(self.JSON, ["J1885"])
+        self.assertEqual(list(idx), ["J1885"])
+
+    def test_missing_cash_price_is_none_not_zero(self):
+        idx, _ = self.mrf.index_for(self.JSON, ["E0114"])
+        self.assertIsNone(idx["E0114"]["cash"])
+        self.assertAlmostEqual(idx["E0114"]["gross"], 88.00)
+
+    # ---- comparison
+    def _idx(self, codes=("J1885", "A4550", "99283", "E0114")):
+        return self.mrf.index_for(self.JSON, list(codes))[0]
+
+    def test_charge_above_published_cash_price_is_reported(self):
+        lines = [Line(idx=1, code="J1885", units=2, charge=180.0)]
+        f = self.mrf.compare(lines, self._idx(), "src", Context(insured=False))
+        self.assertEqual([x.rule for x in f], ["mrf_cash_price"])
+
+    def test_charge_at_or_below_the_cash_price_is_silent(self):
+        lines = [Line(idx=1, code="J1885", units=2, charge=49.0)]
+        self.assertEqual(self.mrf.compare(lines, self._idx(), "src"), [])
+
+    def test_cash_price_finding_is_never_recoverable(self):
+        """It is leverage, not proof of an error -- and a duplicated line already
+        reports its own recoverable amount. Counting both claims the same dollars
+        twice, which is how a 'disputable' total grows larger than the bill."""
+        lines = [Line(idx=1, code="J1885", units=2, charge=180.0)]
+        for ctx in (Context(insured=False), Context(insured=True), None):
+            f = self.mrf.compare(lines, self._idx(), "src", ctx)
+            self.assertFalse(f[0].recoverable)
+
+    def test_self_pay_raises_severity_but_not_recoverability(self):
+        lines = [Line(idx=1, code="J1885", units=2, charge=180.0)]
+        self.assertEqual(
+            self.mrf.compare(lines, self._idx(), "s", Context(insured=False))[0].severity,
+            "high")
+        self.assertEqual(
+            self.mrf.compare(lines, self._idx(), "s", Context(insured=True))[0].severity,
+            "warn")
+
+    def test_identical_lines_collapse_into_one_finding(self):
+        lines = [Line(idx=1, code="J1885", units=2, charge=180.0),
+                 Line(idx=2, code="J1885", units=2, charge=180.0)]
+        f = self.mrf.compare(lines, self._idx(), "src", Context(insured=False))
+        self.assertEqual(len(f), 1)
+        self.assertEqual(f[0].lines, [1, 2])
+
+    def test_billed_above_published_gross_is_recoverable(self):
+        """Above the hospital's own chargemaster is a discrepancy, not a negotiation."""
+        lines = [Line(idx=1, code="E0114", units=1, charge=124.0)]   # gross 88.00
+        f = self.mrf.compare(lines, self._idx(), "src")
+        self.assertEqual([x.rule for x in f], ["mrf_above_gross"])
+        self.assertTrue(f[0].recoverable)
+        self.assertAlmostEqual(f[0].amount, 36.0)
+
+    def test_code_absent_from_the_file_produces_nothing(self):
+        lines = [Line(idx=1, code="ZZZZZ", units=1, charge=9999.0)]
+        self.assertEqual(self.mrf.compare(lines, self._idx(), "src"), [])
+
+    def test_citation_names_the_file_and_the_rule(self):
+        lines = [Line(idx=1, code="J1885", units=2, charge=180.0)]
+        f = self.mrf.compare(lines, self._idx(), "myfile.json", Context(insured=False))
+        self.assertIn("myfile.json", f[0].citation)
+        self.assertIn("45 CFR 180.50", f[0].citation)
+
+
+class TestTeachingCases(unittest.TestCase):
+    """The practice bills double as a coverage check.
+
+    Each case records what is deliberately wrong with it. If a rule quietly
+    stops firing, the case it was written for stops being solvable and this
+    fails -- which is a more legible signal than a rule-level unit test, because
+    it names the thing a reader would no longer be told.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from itemize import teaching
+        cls.teaching = teaching
+        cls.ref = Reference(os.path.join(os.path.dirname(FIX), "..", "web", "data"))
+        if not cls.ref.available:
+            raise unittest.SkipTest("reference data missing; run tools/build_data.py")
+
+    def _findings(self, case):
+        from itemize.eob import parse_eob
+        lines = parse(case["bill"])
+        eob = parse_eob(case["eob"]) if case.get("eob") else None
+        return lines, rules.audit(lines, self.ref, self.teaching.context_for(case), eob)
+
+    def test_every_case_parses_to_the_expected_line_count(self):
+        for case in self.teaching.CASES:
+            lines, _ = self._findings(case)
+            expected = len([l for l in case["bill"].strip().split("\n")[1:] if l.strip()])
+            self.assertEqual(len(lines), expected, case["id"])
+
+    def test_every_seeded_error_is_caught(self):
+        for case in self.teaching.CASES:
+            _, findings = self._findings(case)
+            _hits, misses, _extra = self.teaching.score(case, findings)
+            self.assertEqual(misses, [], f"{case['id']} no longer detects: "
+                                         f"{[m[0] for m in misses]}")
+
+    def test_seeded_line_numbers_exist_on_the_bill(self):
+        """A key that points at line 7 of a six-line bill teaches the wrong thing."""
+        for case in self.teaching.CASES:
+            lines, _ = self._findings(case)
+            valid = {l.idx for l in lines}
+            for rule, seeded_lines, _why in case["seeded"]:
+                for idx in seeded_lines:
+                    self.assertIn(idx, valid, f"{case['id']}/{rule} cites line {idx}")
+
+    def test_case_ids_are_unique_and_url_safe(self):
+        ids = [c["id"] for c in self.teaching.CASES]
+        self.assertEqual(len(ids), len(set(ids)))
+        for i in ids:
+            self.assertRegex(i, r"^[a-z0-9-]+$")
+
+    def test_every_case_carries_a_why_for_each_seeded_error(self):
+        for case in self.teaching.CASES:
+            self.assertTrue(case["seeded"], case["id"])
+            for rule, _lines, why in case["seeded"]:
+                self.assertTrue(rule and why.strip(), case["id"])

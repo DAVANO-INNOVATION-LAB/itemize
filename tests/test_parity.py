@@ -32,6 +32,22 @@ DATA = os.path.join(ROOT, "web", "data")
 NODE = shutil.which("node")
 
 
+def parse_shape(l):
+    """Every Line field the rules can read.
+
+    Comparing a subset is not a parity check: `unit_price` was parsed by the
+    Python engine and dropped by the JS one for as long as this harness only
+    diffed idx/code/units/charge/date, which silently disabled
+    unit_price_arithmetic in the browser while the CLI kept firing it.
+    """
+    return {
+        "idx": l.idx, "code": l.code, "desc": l.desc, "units": l.units,
+        "charge": round(l.charge, 2), "date": l.date,
+        "modifiers": list(l.modifiers or []), "revenue_code": l.revenue_code,
+        "unit_price": round(l.unit_price or 0, 2), "ndc": l.ndc,
+    }
+
+
 def py_shape(findings):
     return [{
         "rule": f.rule,
@@ -46,6 +62,7 @@ def run_js(lines, ref, ctx=None, eob=None):
     payload = {
         "lines": [asdict(l) for l in lines],
         "ref": {"hcpcs": ref.hcpcs, "asp": ref.asp, "dmepos": ref.dmepos,
+                "nadac": ref.nadac, "drg": ref.drg,
                 "states": ref.states_raw, "manifest": ref.manifest},
         "context": ctx.to_dict() if ctx else None,
         "eob": eob,
@@ -132,19 +149,142 @@ class TestParity(unittest.TestCase):
     def test_parsers_agree_on_csv(self):
         with open(os.path.join(ROOT, "tests", "fixtures", "sample_bill.csv")) as f:
             text = f.read()
-        py = [{"idx": l.idx, "code": l.code, "units": l.units,
-               "charge": round(l.charge, 2), "date": l.date} for l in parse(text)]
+        py = [parse_shape(l) for l in parse(text)]
         p = subprocess.run([NODE, DRIVER], input=json.dumps({"mode": "parse", "text": text}),
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr[:1000])
         self.assertEqual(py, json.loads(p.stdout), "parsers disagree on the fixture CSV")
 
+    def assertActionParity(self, lines, ctx=None, eob=None, label=""):
+        from itemize.rules import next_actions
+        py = [{"key": a["key"], "letter": a["letter"], "amount": round(a["amount"], 2),
+               "lines": a["lines"]}
+              for a in next_actions(audit(lines, self.ref, ctx, eob), ctx)]
+        payload = {
+            "mode": "actions",
+            "lines": [asdict(l) for l in lines],
+            "ref": {"hcpcs": self.ref.hcpcs, "asp": self.ref.asp,
+                    "dmepos": self.ref.dmepos, "nadac": self.ref.nadac,
+                    "drg": self.ref.drg, "states": self.ref.states_raw,
+                    "manifest": self.ref.manifest},
+            "context": ctx.to_dict() if ctx else None,
+            "eob": eob,
+        }
+        p = subprocess.run([NODE, DRIVER], input=json.dumps(payload),
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(p.returncode, 0, p.stderr[:2000])
+        self.assertEqual(py, json.loads(p.stdout),
+                         f"engines disagree on next actions{(' for ' + label) if label else ''}")
+        return py
+
+    def test_next_actions_agree(self):
+        """The action plan is the first thing the reader reads. If the CLI packet
+        and the browser rank it differently they are two different tools."""
+        with open(os.path.join(ROOT, "tests", "fixtures", "sample_bill.csv")) as f:
+            lines = parse(f.read())
+        for ctx, label in (
+            (None, "no context"),
+            (Context(insured=False, nonprofit_hospital=True), "self-pay non-profit"),
+            (Context(insured=False, good_faith_estimate=100.0), "GFE exceeded"),
+            (Context(insured=True, deductible_met=True, emergency=True), "insured ER"),
+            (Context(insured=False, state="MA"), "self-pay Massachusetts"),
+        ):
+            got = self.assertActionParity(lines, ctx, label=label)
+            self.assertLessEqual(len(got), 3, "action list must stay capped")
+
+    def test_itemized_bill_action_outranks_everything(self):
+        """Nothing below can be checked without an itemized statement."""
+        from itemize.rules import next_actions
+        lines = parse("Code,Description,Qty,Charges\n"
+                      ",ROOM AND BOARD,1,9000.00\n"
+                      ",PHARMACY,1,2000.00\n")
+        ctx = Context(insured=False, nonprofit_hospital=True, good_faith_estimate=10.0)
+        acts = next_actions(audit(lines, self.ref, ctx), ctx)
+        self.assertEqual(acts[0]["key"], "itemized")
+        self.assertActionParity(lines, ctx, label="itemized first")
+
+    def test_nadac_benchmark_agrees(self):
+        """Needs a real NDC from the shipped table, so pick one at runtime."""
+        ndc = next((k for k, v in self.ref.nadac.items()
+                    if v.get("u") == "EA" and 0 < v.get("p", 0) < 0.5), None)
+        if not ndc:
+            self.skipTest("no suitable NADAC record in the shipped table")
+        price = self.ref.nadac[ndc]["p"]
+        lines = [
+            Line(idx=1, code="PHRM01", desc="TABLET", units=30,
+                 charge=round(price * 30 * 300, 2), ndc=ndc),          # ~300x
+            Line(idx=2, code="PHRM02", desc="TABLET", units=10,
+                 charge=round(price * 10 * 2, 2), ndc=ndc),            # ordinary margin
+        ]
+        got = self.assertParity(lines, label="NADAC benchmark")
+        self.assertTrue(any(f["rule"] == "nadac_benchmark" for f in got))
+        self.assertFalse(any(f["rule"] == "nadac_benchmark" and f["recoverable"]
+                             for f in got))
+
+    def test_nadac_stands_down_when_asp_prices_the_line_in_both_engines(self):
+        ndc = next(iter(self.ref.nadac), None)
+        asp_code = next((c for c, v in self.ref.asp.items() if v.get("limit", 0) > 0), None)
+        if not ndc or not asp_code:
+            self.skipTest("shipped tables missing nadac/asp records")
+        lines = [Line(idx=1, code=asp_code, desc="DRUG", units=5,
+                      charge=50000.0, ndc=ndc)]
+        got = self.assertParity(lines, label="NADAC/ASP precedence")
+        self.assertFalse(any(f["rule"] == "nadac_benchmark" for f in got))
+
+    def test_drg_benchmark_agrees(self):
+        drg = next(iter(sorted(self.ref.drg)), None)
+        if not drg:
+            self.skipTest("drg table not built")
+        avg = self.ref.drg[drg]["charge"]
+        lines = [Line(idx=1, code="", desc="ROOM AND BOARD", units=1, charge=avg * 3)]
+        got = self.assertParity(lines, Context(drg=drg), label="DRG above average")
+        self.assertTrue(any(f["rule"] == "drg_benchmark" for f in got))
+        # Whole-bill context must never carry a disputable amount.
+        for f in got:
+            if f["rule"] == "drg_benchmark":
+                self.assertEqual(f["amount"], 0)
+                self.assertFalse(f["recoverable"])
+                self.assertEqual(f["lines"], [])
+
+        lines = [Line(idx=1, code="", desc="ROOM AND BOARD", units=1, charge=avg)]
+        self.assertParity(lines, Context(drg=drg), label="DRG at average")
+
+    def test_unknown_and_zero_padded_drg_agree(self):
+        drg = next(iter(sorted(self.ref.drg)), None)
+        if not drg:
+            self.skipTest("drg table not built")
+        lines = [Line(idx=1, code="", desc="ROOM", units=1, charge=100000.0)]
+        self.assertParity(lines, Context(drg="999"), label="unknown DRG")
+        # "0470" must resolve the same way "470" does in both engines.
+        self.assertParity(lines, Context(drg="0" + drg), label="zero-padded DRG")
+
+    def test_parsers_agree_on_unit_price_and_ndc_columns(self):
+        """Regression: the JS parser had no `unit_price` or `ndc` header alias.
+
+        The Python engine read a unit-price column and fired
+        unit_price_arithmetic; the browser read nothing and stayed silent on the
+        same bill. Both columns are now parsed and both are diffed here.
+        """
+        with open(os.path.join(ROOT, "tests", "fixtures", "sample_bill_ndc.csv")) as f:
+            text = f.read()
+        lines = parse(text)
+        self.assertTrue(any(l.unit_price > 0 for l in lines), "fixture must carry unit prices")
+        self.assertTrue(any(l.ndc for l in lines), "fixture must carry NDCs")
+
+        py = [parse_shape(l) for l in lines]
+        p = subprocess.run([NODE, DRIVER], input=json.dumps({"mode": "parse", "text": text}),
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr[:1000])
+        self.assertEqual(py, json.loads(p.stdout), "parsers disagree on unit price / NDC")
+
+        # ...and the rules built on those fields agree too.
+        self.assertParity(lines, label="unit price + NDC bill")
+
     def test_parsers_agree_on_pdf_style_columns(self):
         text = ("2026-03-14  99283  EMERGENCY DEPT VISIT LEVEL 3  1  1842.00\n"
                 "2026-03-14  CHG40021  PHARMACY GENERAL CLASSIFICATION  1  412.75\n"
                 "2026-03-14  J1885  KETOROLAC INJ 15MG  2  180.00\n")
-        py = [{"idx": l.idx, "code": l.code, "units": l.units,
-               "charge": round(l.charge, 2), "date": l.date} for l in parse(text)]
+        py = [parse_shape(l) for l in parse(text)]
         p = subprocess.run([NODE, DRIVER], input=json.dumps({"mode": "parse", "text": text}),
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(py, json.loads(p.stdout), "parsers disagree on column-split text")

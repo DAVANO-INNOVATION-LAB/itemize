@@ -152,7 +152,7 @@ button[disabled] { opacity: .45; cursor: default; filter: none; }
 .warn .badge { background: var(--warn-bg); color: var(--warn); }
 .notice .badge { background: var(--notice-bg); color: var(--notice); }
 
-.finding h3 { margin: 0 0 .45rem; font-size: 1.02rem; font-weight: 600; }
+.finding h4 { margin: 0 0 .45rem; font-size: 1.02rem; font-weight: 600; }
 .finding p { margin: 0 0 .6rem; max-width: var(--measure); }
 .amount { font-size: .88rem; color: var(--ink-soft); font-style: italic; }
 .source {
@@ -196,7 +196,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .stat .v { font-size: 1.15rem; }
 
   .finding { padding: .85rem .95rem; }
-  .finding h3 { font-size: .98rem; }
+  .finding h4 { font-size: .98rem; }
 
   .scroll { overflow-x: visible; }
   #linetable thead {
@@ -253,3 +253,159 @@ footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--lin
          font-size: .85rem; color: var(--ink-soft); }
 a { color: var(--accent); }
 .hidden { display: none; }
+
+/* ------------------------------------------------------ step numbering ---
+   The numbers encode a real sequence -- paste, answer, add, read, act -- so
+   they carry information rather than decorating the headings. */
+.step {
+  display: inline-block; min-width: 1.5em; margin-right: .4rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .8em; font-weight: 700; color: var(--accent);
+}
+h2 .opt {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: .72rem; font-weight: 400; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--ink-soft); margin-left: .5rem;
+}
+
+h3 { font-family: Georgia, serif; font-weight: 600; font-size: 1.08rem; margin: 2rem 0 .5rem; }
+
+/* --------------------------------------------------------- result status */
+.resultstatus {
+  font-size: .92rem; color: var(--ink-soft); margin: .25rem 0 0;
+  padding: .5rem .75rem; border-radius: var(--radius);
+  background: transparent; border: 1px solid transparent;
+}
+.resultstatus.pulse {
+  background: var(--accent-soft); border-color: var(--line); color: var(--accent);
+  animation: settle 1.6s ease-out forwards;
+}
+@keyframes settle {
+  0%   { background: var(--accent-soft); }
+  100% { background: transparent; border-color: transparent; color: var(--ink-soft); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .resultstatus.pulse { animation: none; }
+}
+
+/* ----------------------------------------------------------- parse check
+   The most important action on the page: a mis-read line produces a
+   confident, sourced, wrong dispute. It gates the evidence packet. */
+.parsecheck {
+  background: var(--notice-bg); border: 1px solid var(--line);
+  border-left: 3px solid var(--notice);
+  border-radius: var(--radius); padding: .95rem 1.15rem; margin: 1rem 0;
+  font-size: .94rem;
+}
+.parsecheck strong { color: var(--notice); }
+.parsecheck p { margin: .4rem 0 0; max-width: var(--measure); }
+.parsecheck code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em;
+  background: var(--surface); padding: .05em .3em; border-radius: 3px;
+}
+
+/* ------------------------------------------------------------- actions
+   Findings sorted by severity are a reading order, not a plan. */
+.actions {
+  background: var(--surface); border: 1px solid var(--line);
+  border-top: 3px solid var(--accent);
+  border-radius: var(--radius); padding: 1.1rem 1.25rem; margin: 1.25rem 0 1.75rem;
+}
+.actions h3 { margin: 0; font-size: 1.15rem; }
+.actions > .hint { margin-top: .3rem; }
+.actions ol { margin: 1rem 0 0; padding-left: 1.4rem; }
+.actions li { margin-bottom: 1.1rem; }
+.actions li:last-child { margin-bottom: 0; }
+.actions li::marker { color: var(--accent); font-weight: 700; }
+.act-title { font-weight: 600; }
+.act-amount {
+  margin-left: .5rem; font-size: .85rem; font-variant-numeric: tabular-nums;
+  color: var(--high); font-weight: 600;
+}
+.actions li p { margin: .3rem 0 .5rem; font-size: .92rem; color: var(--ink-soft);
+                max-width: var(--measure); }
+.actions li button { margin-top: .2rem; }
+
+/* --------------------------------------------------------- line references */
+.lines { font-size: .85rem; color: var(--ink-soft); }
+.lineref {
+  display: inline-block; min-width: 1.6em; text-align: center;
+  padding: .05em .35em; margin-right: .15rem;
+  border: 1px solid var(--line); border-radius: 3px;
+  font-variant-numeric: tabular-nums; text-decoration: none;
+  background: var(--bg);
+}
+.lineref:hover, .lineref:focus-visible { border-color: var(--accent); }
+#linetable tr.flash { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* -------------------------------------------------------------- letters */
+.letterbox {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); padding: 1rem 1.15rem; margin-top: 1rem;
+}
+.letterbox textarea { min-height: 22rem; }
+
+/* ------------------------------------------------------------ keep a copy */
+.keepbox {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .9rem 1.15rem; margin-top: 2.5rem; background: var(--surface);
+  font-size: .92rem;
+}
+.keepbox > label { font-weight: 500; cursor: pointer; display: block; }
+.keepbox input[type="checkbox"] { margin-right: .45rem; }
+.linkbtn {
+  background: none; border: 0; padding: 0; color: var(--accent);
+  font: inherit; text-decoration: underline; cursor: pointer;
+}
+.linkbtn:hover { filter: none; opacity: .8; }
+
+.ctxprompt {
+  background: var(--accent-soft); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: .6rem .85rem; font-size: .9rem;
+  color: var(--accent); margin: .5rem 0 0;
+}
+
+#context input[type="text"], #context select { min-height: 2.2rem; }
+
+/* -------------------------------------------------------------- print ---
+   A billing office wants paper. Cmd-P should produce the evidence packet,
+   not a screenshot of an app: controls, inputs and the privacy notice all
+   go, and every source stays. */
+@media print {
+  :root {
+    --bg: #fff; --surface: #fff; --ink: #000; --ink-soft: #333; --line: #999;
+    --accent: #000; --accent-soft: #fff;
+    --high: #000; --high-bg: #fff; --warn: #000; --warn-bg: #fff;
+    --notice: #000; --notice-bg: #fff; --info: #000; --info-bg: #fff;
+  }
+  body { font-size: 10.5pt; background: #fff; color: #000; }
+  .wrap { max-width: none; padding: 0; }
+
+  /* Everything that is an input, a control or an instruction to the reader. */
+  .controls, .privacy, #dropzone, #context, .keepbox, .parsecheck, .letterbox,
+  #filestatus, #eobstatus, #keepstatus, #copystatus, .ctxprompt, .resultstatus,
+  h2 .step, h2 .opt, footer p:last-child a { display: none !important; }
+  /* Section 1-3 headings and their hints describe actions, not findings. */
+  h2:has(+ .hint), .hint { display: none; }
+  #results h2, #results h3 { display: block; }
+
+  #results { display: block !important; }
+  .hidden { display: none !important; }
+
+  .finding, .actions, .stat {
+    border: 1px solid #999; border-left-width: 1px;
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  .actions { border-top-width: 1px; }
+  .badge { border: 1px solid #000; background: #fff !important; color: #000 !important; }
+  .summary { grid-template-columns: repeat(3, 1fr); }
+  .source { font-size: 8.5pt; }
+  .lineref { border: 0; background: none; text-decoration: none; }
+  a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 8pt; word-break: break-all; }
+  table { font-size: 9pt; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  h1 { font-size: 16pt; }
+  h2 { font-size: 12pt; margin-top: 1.2rem; }
+  .disclaimer, footer { border: 1px solid #999; break-inside: avoid; }
+}

@@ -21,6 +21,20 @@ RE_CDT = re.compile(r"^D\d{4}$")
 RE_HCPCS_II = re.compile(r"^[A-CE-Z]\d{4}$")
 
 
+def normalize_drg(drg):
+    """MS-DRG to the 3-digit form CMS keys on, or "" if there isn't one.
+
+    Readers copy the DRG off a UB-04 in whatever shape it was printed: "470",
+    "0470", "DRG 470". Leading zeros are stripped before padding, because
+    zfill alone leaves "0470" four characters long and the lookup silently
+    misses. Mirrors normalizeDrg in web/rules.js.
+    """
+    code = re.sub(r"\D", "", str(drg or ""))
+    if not code:
+        return ""
+    return (code.lstrip("0") or "0").zfill(3)
+
+
 def classify(code):
     """'public' (HCPCS Level II), 'ama' (CPT), 'ada' (CDT), or 'unknown'."""
     c = (code or "").strip().upper()
@@ -44,6 +58,10 @@ class Line:
     modifiers: list = field(default_factory=list)
     revenue_code: str = ""
     unit_price: float = 0.0
+    # National Drug Code, normalised to 11 digits. Drug lines on a hospital bill
+    # frequently carry one alongside the HCPCS code; it is what lets us price a
+    # line against NADAC rather than only against the Part B ASP limits.
+    ndc: str = ""
     raw: str = ""
 
     @property
@@ -78,6 +96,8 @@ class Reference:
         self.hcpcs = self._load("hcpcs.json", {})
         self.asp = self._load("asp.json", {})
         self.dmepos = self._load("dmepos.json", {})
+        self.nadac = self._load("nadac.json", {})
+        self.drg = self._load("drg.json", {})
         self.states_raw = self._load("states.json", {})
         self.manifest = self._load("manifest.json", {})
 
@@ -108,6 +128,22 @@ class Reference:
         if not rec:
             return None, None
         return rec.get("limit"), rec.get("dose", "")
+
+    def nadac_price(self, ndc):
+        """(price_per_unit, pricing_unit, description, is_brand) or None.
+
+        NADAC is the surveyed *acquisition* cost -- what a pharmacy paid, not an
+        allowed amount. Every dispensed drug is legitimately billed above it.
+        """
+        rec = self.nadac.get((ndc or "").strip())
+        if not rec:
+            return None
+        return rec.get("p"), rec.get("u", ""), rec.get("d", ""), bool(rec.get("b"))
+
+    def drg_stats(self, drg):
+        """National averages for an MS-DRG, or None. Keys are zero-padded to 3."""
+        code = normalize_drg(drg)
+        return self.drg.get(code) if code else None
 
     def cite(self, dataset):
         """Provenance string for a dataset: url, file, sha256 prefix, build date."""

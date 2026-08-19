@@ -4,9 +4,10 @@
 building and sourcing free tools for the betterment of the people who need them.*
 
 **Check an itemized medical bill against public federal data.** Finds duplicate
-charges, unspecified codes, and drug prices billed at large multiples of what
-Medicare allows — then produces a sourced evidence packet you can hand to a
-billing office.
+charges, unspecified codes, drug prices billed at large multiples of what
+Medicare allows or what pharmacies pay, and lines billed above your hospital's
+own published cash price — then produces a sourced evidence packet you can hand
+to a billing office.
 
 Runs entirely on your own machine. Zero third-party dependencies. Python 3.9+.
 
@@ -70,10 +71,13 @@ them.
 | Modifier flags | nothing but the bill | Modifiers 25/59/X-series — the usual unbundling argument |
 | Revenue-code mismatch | nothing but the bill | A pharmacy revenue code on a non-drug line |
 | Medicare ASP benchmark | CMS Part B payment limits | Drugs billed at 3×–1000× the Medicare allowed amount |
+| Drug acquisition cost | CMS/Medicaid NADAC | Drugs identified by **NDC** billed at large multiples of what pharmacies pay to buy them — the whole outpatient pharmacy side ASP cannot see |
+| MS-DRG benchmark | CMS inpatient averages | An inpatient bill against the national average charge for the same DRG |
 | Medicare DMEPOS benchmark | CMS DMEPOS fee schedule | Equipment and supplies billed far above the schedule |
 | Unspecified codes | CMS HCPCS Level II | `J3490`, `A9270`, `E1399` — "we won't say what this was" |
 | Unrecognised codes | CMS HCPCS Level II | Internal chargemaster codes that don't match a billing code |
 | NCCI unbundling | *your own* AMA licence | Code pairs CMS says can't be billed together |
+| Published cash price | *your* hospital's price file | Lines billed above the discounted cash price the hospital publishes and attests to — see *Your hospital's own prices* below |
 
 ### State law
 
@@ -118,10 +122,14 @@ office dismisses an unsourced complaint; this one names its sources.
 python3 tools/build_data.py --out web/data
 ```
 
-That fetches HCPCS Level II codes, Medicare Part B drug payment limits and the
-DMEPOS fee schedule, with a provenance manifest. About **33%** of HCPCS Level II
-codes carry a price benchmark; the rest have no published Medicare rate that is
-free to redistribute.
+That fetches HCPCS Level II codes, Medicare Part B drug payment limits, the
+DMEPOS fee schedule, NADAC drug acquisition costs and CMS's national MS-DRG
+averages, with a provenance manifest. About **33%** of HCPCS Level II codes
+carry a price benchmark; the rest have no published Medicare rate that is free
+to redistribute. NADAC is ~90 MB to download — `--skip nadac,drg` makes a fast
+partial rebuild, and a skipped dataset keeps the file already on disk along with
+its old provenance entry, so the manifest never claims a build date the data
+does not have.
 
 **Command line:**
 
@@ -131,6 +139,10 @@ python3 -m itemize.cli audit bill.csv --self-pay --nonprofit --emergency -o revi
 
 ```bash
 python3 -m itemize.cli audit bill.csv --eob eob.csv --insured --deductible-unmet
+```
+
+```bash
+python3 -m itemize.cli audit bill.csv --self-pay --drg 470
 ```
 
 ```bash
@@ -147,7 +159,54 @@ Then open `http://localhost:8811`. The page is static — no backend, no upload,
 no account. It works offline once loaded, and you can host `web/` on GitHub
 Pages as-is.
 
+### Your hospital's own prices
+
+The strongest finding for a self-pay reader is not a Medicare comparison — it is
+the hospital's own number. Since 1 January 2026, enforced from 1 April 2026, the
+CY2026 OPPS/ASC rule requires hospitals to publish payer-specific rates as
+**actual dollar amounts** rather than formulas like "120% of Medicare", alongside
+a gross charge and a discounted cash price, under a named attestation. That is
+what makes these files usable by a patient.
+
+```bash
+python3 -m itemize.cli audit bill.csv --self-pay --mrf https://example-hospital.org/…/standardcharges.json
+```
+
+```bash
+python3 -m itemize.cli mrf ./standardcharges.csv --codes J1885,A4550
+```
+
+The file is **streamed** — these run to gigabytes — and only the codes on your
+bill are retained. Nothing from it is written to disk, and nothing from it ships
+with this project: an MRF contains CPT codes because the hospital publishes them,
+and reading your own hospital's file on your own machine is not redistribution.
+See [NOTICE.md](NOTICE.md).
+
+This is CLI-only. The browser cannot fetch a hospital's file directly — those
+servers do not send CORS headers, and a multi-gigabyte download is not something
+to start in a page anyway.
+
+### Teaching
+
+Medical schools do not teach billing, and the health-systems-science critique is
+that what teaching exists is didactic rather than hands-on. The practice bills
+here are synthetic, every error in them is deliberate and recorded, and none of
+it needs patient data, an IRB or a procurement cycle.
+
+```bash
+python3 -m itemize.cli teach list
+python3 -m itemize.cli teach show ed-visit -o practice.csv   # for the student
+python3 -m itemize.cli teach key ed-visit                    # for the instructor
+python3 -m itemize.cli teach score ed-visit                  # what the engine catches
+```
+
+`teach score` is also a coverage check: the test suite fails if a case stops
+being solvable, which is a more legible signal than a rule-level unit test
+because it names the thing a reader would no longer be told.
+
 **Accepted inputs:** CSV/TSV, plain text pasted from a statement, and **PDF**.
+Recognised columns include date, code, **NDC**, description, units, unit price,
+charge, revenue code and modifiers, in any order.
 PDFs are read on-device by `web/pdf.js`, a dependency-free text-layer extractor
 built on the browser's native `DecompressionStream`. Drag a file anywhere onto
 the input area, or use *Open a file…*.
@@ -219,6 +278,17 @@ Read these before trusting the output.
 * **Only about a third of HCPCS Level II codes have a price benchmark.** Lab
   work in particular is largely CPT-coded and therefore invisible to the open
   tier — see below.
+* **NADAC is acquisition cost, not an allowed amount.** It is what a pharmacy
+  paid a wholesaler. A dispensing fee and a real margin belong on top of it, so
+  the thresholds here are deliberately far higher than the ASP ones, and a
+  finding is still only a question. NADAC also prices per `EA`/`ML`/`GM`, and a
+  bill does not always count units the same way.
+* **A bare 10-digit NDC is declined rather than guessed.** It could be 4-4-2,
+  5-3-2 or 5-4-1; padding the wrong segment points at a different drug at a
+  different price, invisibly. Hyphenated NDCs are unambiguous and are used.
+* **The DRG comparison is whole-bill context, never a line dispute.** It carries
+  no dollar amount for exactly that reason. Submitted charges are list prices
+  almost nobody pays, and your statement may not cover the whole stay.
 
 ## Privacy
 
@@ -244,6 +314,8 @@ itemize/eob.py        EOB parsing and cross-check
 itemize/letters.py    letter drafts
 itemize/evidence.py   markdown evidence packet
 itemize/ncci.py       AMA-licensed tier (consent, fetch, unbundling)
+itemize/mrf.py        hospital price transparency files (streamed, CLI-only tier)
+itemize/teaching.py   practice bills with seeded errors, and the key
 itemize/cli.py        command line
 web/rules.js          the same engine for the browser AND the parity harness
 web/pdf.js            dependency-free PDF text-layer extractor
@@ -259,8 +331,16 @@ tests/                unittest suite, including Python/JS parity
 `web/rules.js` and `itemize/rules.py` implement the same rules. Nothing about
 that is safe on trust, so `tests/test_parity.py` runs **both** over identical
 input — via Node — and diffs which rules fired, at what severity, over which
-lines, for how much. Parsers are compared the same way. Change a threshold in
-one engine and the suite fails.
+lines, for how much, plus the ranked action list. Parsers are compared the same
+way. Change a threshold in one engine and the suite fails.
+
+**The parity check is only as good as the fields it compares.** It used to diff
+five parsed fields, which is how the JS parser came to be missing a `unit_price`
+header alias: the Python engine read a unit-price column and reported lines
+where units × price ≠ the charge, and the browser silently reported nothing on
+the same bill. Both engines now emit every field the rules can read, and the
+harness diffs all of them. If you add a field to `Line`, add it to
+`parse_shape()` too.
 
 ```bash
 python3 -m unittest discover -s tests -v
@@ -293,6 +373,21 @@ Useful directions, roughly in order of value:
 6. **Clinical Lab Fee Schedule.** Attempted and abandoned: the CLFS landing pages
    404, and lab work is overwhelmingly CPT-coded, so it belongs in the licensed
    tier rather than the open one. Do not expect to close this gap openly.
+7. **More teaching cases** in `itemize/teaching.py`. Every seeded error needs a
+   rule name, the lines it sits on, and a sentence on why it matters — the test
+   suite checks all three, and that the engine still catches it.
+8. **A redacted corpus of real bills.** This is the one thing a university can
+   supply and a solo project structurally cannot: IRB cover, a patient
+   population and a redaction protocol. Real exports remain the single most
+   valuable contribution here.
+
+**Not planned: international price comparison.** The canonical global reference,
+MSH's *International Medical Products Price Guide*, was retired in June 2024
+with data already nine years stale; EURIPID is closed to anyone but national
+pricing authorities; and ex-manufacturer, retail, reimbursed and procurement
+prices are four different numbers that do not normalise. More to the point, a US
+billing office does not care what another country pays, so the finding would be
+one they can wave away — which is worse than no finding.
 
 Rules must cite a source. A finding a billing office can wave away is worse than
 no finding, because it costs the reader credibility they may only get to spend
