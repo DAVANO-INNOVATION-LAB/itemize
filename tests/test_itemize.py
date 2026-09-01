@@ -590,3 +590,273 @@ class TestTeachingCases(unittest.TestCase):
             self.assertTrue(case["seeded"], case["id"])
             for rule, _lines, why in case["seeded"]:
                 self.assertTrue(rule and why.strip(), case["id"])
+
+
+class TestPackaging(unittest.TestCase):
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def test_version_matches_pyproject(self):
+        """Two version strings that can drift will drift, and a release tagged
+        from one of them then lies about the other."""
+        import re
+        import itemize
+        with open(os.path.join(self.ROOT, "pyproject.toml")) as f:
+            text = f.read()
+        m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
+        self.assertIsNotNone(m, "pyproject.toml has no version")
+        self.assertEqual(itemize.__version__, m.group(1))
+
+    def test_declares_no_dependencies(self):
+        """The zero-dependency promise is load-bearing: this tool reads people's
+        medical bills, and every dependency is one more thing a deployer must
+        audit and one more way the 'nothing leaves your machine' claim breaks."""
+        import re
+        with open(os.path.join(self.ROOT, "pyproject.toml")) as f:
+            text = f.read()
+        m = re.search(r"^dependencies\s*=\s*\[(.*?)\]", text, re.M | re.S)
+        self.assertIsNotNone(m)
+        self.assertEqual(m.group(1).strip(), "")
+
+    def test_only_stdlib_is_imported(self):
+        import re
+        import sys
+        stdlib = getattr(sys, "stdlib_module_names", None)
+        if not stdlib:
+            self.skipTest("stdlib_module_names needs Python 3.10+")
+        pat = re.compile(r"^\s*(?:import|from)\s+([a-zA-Z_][\w.]*)", re.M)
+        for sub in ("itemize", "tools"):
+            base = os.path.join(self.ROOT, sub)
+            for root, _dirs, files in os.walk(base):
+                for name in files:
+                    if not name.endswith(".py"):
+                        continue
+                    with open(os.path.join(root, name)) as f:
+                        for mod in pat.findall(f.read()):
+                            top = mod.split(".")[0]
+                            if top in ("itemize", "__future__") or top in stdlib:
+                                continue
+                            self.fail(f"{sub}/{name} imports non-stdlib {top!r}")
+
+    def test_builder_is_importable_from_the_package(self):
+        """An installed copy must refresh its own data; if the builder only
+        exists under tools/ then `itemize data --refresh` cannot work."""
+        from itemize import build_data
+        self.assertTrue(callable(build_data.main))
+
+    def test_service_worker_caches_every_shipped_dataset(self):
+        """The page promises it works offline. A dataset missing from the shell
+        makes that promise false for the findings built on it -- which is how
+        nadac and drg were lost offline the day they were added."""
+        with open(os.path.join(self.ROOT, "web", "sw.js")) as f:
+            shell = f.read()
+        for name in ("hcpcs", "asp", "dmepos", "nadac", "drg", "states", "manifest"):
+            self.assertIn(f"data/{name}.json", shell, name)
+
+
+class TestDataDirResolution(unittest.TestCase):
+    def test_env_var_wins(self):
+        from itemize import model
+        old = os.environ.get("ITEMIZE_DATA")
+        os.environ["ITEMIZE_DATA"] = "/tmp/explicit-itemize-data"
+        try:
+            self.assertEqual(model.default_data_dir(), "/tmp/explicit-itemize-data")
+        finally:
+            if old is None:
+                del os.environ["ITEMIZE_DATA"]
+            else:
+                os.environ["ITEMIZE_DATA"] = old
+
+    def test_checkout_is_preferred_over_the_user_dir(self):
+        from itemize import model
+        old = os.environ.pop("ITEMIZE_DATA", None)
+        try:
+            self.assertTrue(model.default_data_dir().endswith(os.path.join("web", "data")))
+        finally:
+            if old is not None:
+                os.environ["ITEMIZE_DATA"] = old
+
+    def test_user_data_dir_is_absolute_and_named(self):
+        from itemize.model import user_data_dir
+        d = user_data_dir()
+        self.assertTrue(os.path.isabs(d))
+        self.assertTrue(d.endswith("itemize"))
+
+
+class TestStaleness(unittest.TestCase):
+    def _ref(self, stamp, datasets=("hcpcs", "nadac")):
+        r = FakeRef()
+        r.manifest = {"built": stamp, "sources": [
+            {"dataset": d, "retrieved": stamp, "member": f"{d}.csv",
+             "url": "http://example/x", "sha256": "ab" * 32, "kept": 1}
+            for d in datasets]}
+        return r
+
+    def test_fresh_data_produces_no_finding(self):
+        ref = self._ref(datetime.date.today().isoformat())
+        self.assertEqual(rules.rule_stale_reference_data([], ref), [])
+
+    def test_old_data_is_reported(self):
+        f = rules.rule_stale_reference_data([], self._ref("2020-01-01"))
+        self.assertEqual(len(f), 1)
+        self.assertEqual(f[0].rule, "stale_reference_data")
+        self.assertEqual(f[0].severity, "warn")
+
+    def test_each_dataset_has_its_own_window(self):
+        """NADAC is weekly and DRG annual; one threshold for both would either
+        nag about the DRG file or stay quiet on a year-old NADAC."""
+        from itemize.model import REFRESH_DAYS
+        self.assertLess(REFRESH_DAYS["nadac"], REFRESH_DAYS["hcpcs"])
+        self.assertLess(REFRESH_DAYS["hcpcs"], REFRESH_DAYS["drg"])
+
+    def test_a_source_keeps_its_own_date_not_the_build_date(self):
+        """A dataset carried forward by --skip was fetched earlier. Dating it by
+        the manifest build would make stale files look fresh."""
+        ref = FakeRef()
+        ref.manifest = {"built": datetime.date.today().isoformat(), "sources": [
+            {"dataset": "nadac", "retrieved": "2020-01-01", "member": "n.csv",
+             "url": "http://example/n", "sha256": "cd" * 32, "kept": 1,
+             "skipped_at": datetime.date.today().isoformat()}]}
+        self.assertTrue(ref.stale_datasets())
+        self.assertIn("2020-01-01", ref.cite("nadac"))
+
+    def test_finding_carries_no_amount(self):
+        f = rules.rule_stale_reference_data([], self._ref("2020-01-01"))
+        self.assertEqual(f[0].amount, 0)
+        self.assertFalse(f[0].recoverable)
+
+    def test_undated_source_is_ignored_rather_than_assumed_fresh(self):
+        ref = FakeRef()
+        ref.manifest = {"sources": [{"dataset": "nadac", "member": "n.csv"}]}
+        self.assertEqual(ref.dataset_ages(), [])
+
+
+class TestJsonOutput(unittest.TestCase):
+    def setUp(self):
+        from itemize import evidence
+        self.evidence = evidence
+        with open(os.path.join(FIX, "sample_bill.csv")) as f:
+            self.lines = parse(f.read())
+        self.ref = FakeRef()
+        self.ctx = Context(insured=False, nonprofit_hospital=True)
+        self.findings = rules.audit(self.lines, self.ref, self.ctx)
+
+    def _payload(self):
+        import json
+        return json.loads(self.evidence.to_json(
+            self.lines, self.findings, self.ref, self.ctx))
+
+    def test_is_valid_json_with_the_expected_shape(self):
+        d = self._payload()
+        for key in ("tool", "version", "summary", "findings", "lines",
+                    "next_actions", "reference_data"):
+            self.assertIn(key, d)
+        self.assertEqual(d["tool"], "itemize")
+
+    def test_summary_never_exceeds_the_bill(self):
+        d = self._payload()
+        self.assertLessEqual(d["summary"]["disputable_line_items"],
+                             d["summary"]["total_charges"])
+
+    def test_findings_carry_their_citation(self):
+        for f in self._payload()["findings"]:
+            self.assertTrue(f["citation"], f["rule"])
+
+    def test_carries_the_disclaimer(self):
+        self.assertIn("not advice", self._payload()["disclaimer"])
+
+    def test_agrees_with_the_markdown_packet_on_the_count(self):
+        d = self._payload()
+        self.assertEqual(d["summary"]["findings"], len(self.findings))
+        self.assertEqual(d["summary"]["lines"], len(self.lines))
+
+
+class TestMrfSettings(unittest.TestCase):
+    """A hospital publishes a different price per setting. Mixing them produces a
+    sourced, confident, wrong number -- which is the failure this project exists
+    to avoid, so it gets its own tests."""
+
+    REC = {
+        "description": "KNEE ARTHROSCOPY",
+        "code_information": [{"code": "29881", "type": "CPT"}],
+        "standard_charges": [
+            {"setting": "outpatient", "billing_class": "facility",
+             "gross_charge": 8000.00, "discounted_cash": 4000.00,
+             "minimum": 1500, "maximum": 6000},
+            {"setting": "inpatient", "billing_class": "facility",
+             "gross_charge": 22000.00, "discounted_cash": 15000.00,
+             "minimum": 9000, "maximum": 19000},
+        ],
+    }
+
+    def setUp(self):
+        from itemize import mrf
+        self.mrf = mrf
+
+    def test_each_setting_becomes_its_own_row(self):
+        rows = self.mrf._from_json_record(self.REC)
+        self.assertEqual(len(rows), 2)
+        by = {r["setting"]: r for r in rows}
+        self.assertAlmostEqual(by["outpatient"]["cash"], 4000.00)
+        self.assertAlmostEqual(by["inpatient"]["cash"], 15000.00)
+
+    def test_a_settings_price_is_never_attached_to_another_settings_label(self):
+        """The regression: the row said `outpatient` and carried the inpatient
+        cash price, so a day-surgery patient was shown $15,000 as their
+        hospital's published price for the procedure they had."""
+        for row in self.mrf._from_json_record(self.REC):
+            if row["setting"] == "outpatient":
+                self.assertAlmostEqual(row["gross"], 8000.00)
+                self.assertAlmostEqual(row["cash"], 4000.00)
+            else:
+                self.assertAlmostEqual(row["gross"], 22000.00)
+                self.assertAlmostEqual(row["cash"], 15000.00)
+
+    def test_payer_rates_widen_the_min_max_band(self):
+        rec = {
+            "description": "X", "code_information": [{"code": "AAA", "type": "HCPCS"}],
+            "standard_charges": [{
+                "setting": "outpatient", "gross_charge": 100.0,
+                "payers_information": [
+                    {"payer_name": "A", "standard_charge_dollar": 20.0},
+                    {"payer_name": "B", "standard_charge_dollar": 80.0}],
+            }],
+        }
+        row = self.mrf._from_json_record(rec)[0]
+        self.assertAlmostEqual(row["min"], 20.0)
+        self.assertAlmostEqual(row["max"], 80.0)
+        self.assertEqual(row["payers"], 2)
+
+    def test_index_records_which_settings_it_saw(self):
+        import json
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "mrf.json")
+        with open(path, "w") as f:
+            json.dump({"standard_charge_information": [self.REC]}, f)
+        idx, _ = self.mrf.index_for(path, ["29881"])
+        self.assertEqual(idx["29881"]["settings_seen"], {"outpatient", "inpatient"})
+        # Cheapest cash wins when no setting is requested.
+        self.assertAlmostEqual(idx["29881"]["cash"], 4000.00)
+
+    def test_setting_filter_restricts_the_lookup(self):
+        import json
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "mrf.json")
+        with open(path, "w") as f:
+            json.dump({"standard_charge_information": [self.REC]}, f)
+        idx, _ = self.mrf.index_for(path, ["29881"], setting="inpatient")
+        self.assertAlmostEqual(idx["29881"]["cash"], 15000.00)
+        self.assertEqual(idx["29881"]["setting"], "inpatient")
+
+    def test_finding_names_the_setting_and_warns_when_others_exist(self):
+        import json
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "mrf.json")
+        with open(path, "w") as f:
+            json.dump({"standard_charge_information": [self.REC]}, f)
+        idx, _ = self.mrf.index_for(path, ["29881"])
+        f = self.mrf.compare([Line(idx=1, code="29881", units=1, charge=30000.0)],
+                             idx, "src", Context(insured=False))
+        self.assertEqual(len(f), 1)
+        self.assertIn("outpatient", f[0].detail)
+        self.assertIn("inpatient", f[0].detail)
+        self.assertIn("setting you were actually treated in", f[0].detail)

@@ -1,18 +1,64 @@
 """Core types shared by the parser, rules and evidence writer."""
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import re
+import sys
 from dataclasses import dataclass, field, asdict
 
-DATA_DIR = os.environ.get(
-    "ITEMIZE_DATA",
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "data"),
-)
+def user_data_dir():
+    """Per-user data directory, following each platform's own convention."""
+    if sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Application Support")
+    elif os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser(r"~\AppData\Local")
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(base, "itemize")
+
+
+def default_data_dir():
+    """Where reference data lives, in priority order.
+
+    1. $ITEMIZE_DATA, for anyone who wants to be explicit.
+    2. `web/data` in a source checkout, which is what the repo ships and what
+       the browser app serves.
+    3. The per-user data directory, which is the only writable option once the
+       package is pip-installed and there is no checkout to write into.
+
+    Without (3) an installed copy has nowhere to put a refresh, which is why
+    `itemize data --refresh` exists.
+    """
+    env = os.environ.get("ITEMIZE_DATA")
+    if env:
+        return env
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo = os.path.join(os.path.dirname(here), "web", "data")
+    if os.path.isdir(repo):
+        return repo
+    return user_data_dir()
+
+
+DATA_DIR = default_data_dir()
 
 # Severity ordering, worst first.
 SEVERITIES = ("high", "warn", "notice", "info")
+
+# How long each dataset stays believable before we say so out loud, in days.
+#
+# This measures when YOU last refreshed, not when CMS last published -- that is
+# the number a reader can act on. Reference data going quietly stale is the
+# failure mode this project is least able to detect from the inside, so it is
+# reported as a finding rather than left in a footer nobody reads.
+REFRESH_DAYS = {
+    "hcpcs": 120,     # CMS updates quarterly
+    "asp": 120,       # quarterly
+    "dmepos": 120,    # quarterly
+    "nadac": 45,      # weekly, but it moves by cents; 45 days is generous
+    "drg": 400,       # annual
+}
 
 RE_CPT_I = re.compile(r"^\d{5}$")
 RE_CPT_II = re.compile(r"^\d{4}F$")
@@ -112,6 +158,31 @@ class Reference:
     def available(self):
         return bool(self.hcpcs)
 
+    def dataset_ages(self, today=None):
+        """[(dataset, age_days, limit_days)] for every source with a date.
+
+        A source records its own `retrieved`; the manifest's `built` is only a
+        fallback for data written before that field existed. A dataset carried
+        forward by `--skip` keeps its original date, so a partial rebuild cannot
+        make stale files look fresh.
+        """
+        today = today or datetime.date.today()
+        out = []
+        for src in self.manifest.get("sources", []):
+            name = src.get("dataset")
+            stamp = src.get("retrieved") or self.manifest.get("built") or ""
+            if not name or not stamp:
+                continue
+            try:
+                when = datetime.date.fromisoformat(str(stamp)[:10])
+            except ValueError:
+                continue
+            out.append((name, (today - when).days, REFRESH_DAYS.get(name, 180)))
+        return sorted(out)
+
+    def stale_datasets(self, today=None):
+        return [(n, age, lim) for n, age, lim in self.dataset_ages(today) if age > lim]
+
     def describe(self, code):
         return self.hcpcs.get((code or "").upper(), "")
 
@@ -146,10 +217,18 @@ class Reference:
         return self.drg.get(code) if code else None
 
     def cite(self, dataset):
-        """Provenance string for a dataset: url, file, sha256 prefix, build date."""
+        """Provenance for a dataset: file, url, sha256 prefix, retrieval date.
+
+        The date is the SOURCE's own `retrieved`, not the manifest's build date:
+        a dataset carried forward by `--skip` was fetched earlier, and citing
+        today's build date for it would put a false date in front of a billing
+        office.
+        """
         for s in self.manifest.get("sources", []):
             if s.get("dataset") == dataset:
+                when = s.get("retrieved") or self.manifest.get("built") or "unknown"
+                asof = s.get("asof")
                 return (f"{s.get('member') or dataset} from {s.get('url')} "
-                        f"(sha256 {s.get('sha256', '')[:12]}, retrieved "
-                        f"{self.manifest.get('built', 'unknown')})")
+                        f"(sha256 {s.get('sha256', '')[:12]}, retrieved {when}"
+                        + (f", prices effective {asof}" if asof else "") + ")")
         return f"{dataset} (provenance unavailable -- run tools/build_data.py)"

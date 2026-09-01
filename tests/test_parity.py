@@ -10,6 +10,7 @@ over which lines, for how much, and whether the amount is recoverable.
 
 Skips cleanly when Node is unavailable so the suite still runs.
 """
+import datetime
 import json
 import os
 import shutil
@@ -202,6 +203,57 @@ class TestParity(unittest.TestCase):
         acts = next_actions(audit(lines, self.ref, ctx), ctx)
         self.assertEqual(acts[0]["key"], "itemized")
         self.assertActionParity(lines, ctx, label="itemized first")
+
+    def test_stale_reference_data_agrees(self):
+        """Both engines must date the same manifest the same way.
+
+        A staleness banner that fires in the CLI and not the browser would mean
+        one of them quietly vouches for data the other flags.
+        """
+        import copy
+        from itemize.model import Reference as Ref
+
+        for stamp, expect_stale in (("2020-01-01", True),
+                                    (datetime.date.today().isoformat(), False)):
+            ref = copy.copy(self.ref)
+            ref.manifest = {
+                "built": stamp,
+                "sources": [
+                    {"dataset": d, "retrieved": stamp, "member": f"{d}.csv",
+                     "url": "http://example/x", "sha256": "ab" * 32, "kept": 1}
+                    for d in ("hcpcs", "asp", "dmepos", "nadac", "drg")
+                ],
+            }
+            self.assertEqual(bool(ref.stale_datasets()), expect_stale, stamp)
+
+            lines = [Line(idx=1, code="A4550", desc="TRAY", units=1, charge=68.0)]
+            py = py_shape(audit(lines, ref, None, None))
+            payload = {
+                "lines": [asdict(l) for l in lines],
+                "ref": {"hcpcs": ref.hcpcs, "asp": ref.asp, "dmepos": ref.dmepos,
+                        "nadac": ref.nadac, "drg": ref.drg,
+                        "states": ref.states_raw, "manifest": ref.manifest},
+                "context": None, "eob": None,
+            }
+            p = subprocess.run([NODE, DRIVER], input=json.dumps(payload),
+                               capture_output=True, text=True, timeout=120)
+            self.assertEqual(p.returncode, 0, p.stderr[:2000])
+            self.assertEqual(py, json.loads(p.stdout),
+                             f"engines disagree on staleness at {stamp}")
+            fired = any(f["rule"] == "stale_reference_data" for f in py)
+            self.assertEqual(fired, expect_stale, stamp)
+
+    def test_stale_finding_never_carries_a_disputable_amount(self):
+        import copy
+        ref = copy.copy(self.ref)
+        ref.manifest = {"built": "2020-01-01", "sources": [
+            {"dataset": "nadac", "retrieved": "2020-01-01", "member": "n.csv",
+             "url": "http://example/n", "sha256": "cd" * 32, "kept": 1}]}
+        for f in audit([Line(idx=1, code="A4550", units=1, charge=68.0)], ref):
+            if f.rule == "stale_reference_data":
+                self.assertEqual(f.amount, 0)
+                self.assertFalse(f.recoverable)
+                self.assertEqual(f.lines, [])
 
     def test_nadac_benchmark_agrees(self):
         """Needs a real NDC from the shipped table, so pick one at runtime."""

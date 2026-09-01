@@ -6,6 +6,7 @@ with an unsourced claim is ignore it.
 """
 from __future__ import annotations
 
+from . import __version__
 from .rules import SEV_ORDER
 
 LABEL = {"high": "HIGH", "warn": "REVIEW", "notice": "QUESTION", "info": "NOTE"}
@@ -138,3 +139,52 @@ def render(lines, findings, ref, title="Itemized bill review", ctx=None):
 
     out.append(DISCLAIMER)
     return "\n".join(out)
+
+
+def to_json(lines, findings, ref, ctx=None, title="Itemized bill review"):
+    """Machine-readable review.
+
+    Same numbers as the markdown packet and the same refusal to conflate them:
+    `disputable_line_items` counts only recoverable LINE findings, and whole-bill
+    protections are reported separately rather than summed into it.
+    """
+    import json as _json
+    from .rules import next_actions
+
+    total = sum(l.charge for l in lines)
+    line_level = [f for f in findings if f.recoverable and f.lines]
+    whole_bill = [f for f in findings if f.recoverable and not f.lines]
+    payload = {
+        "tool": "itemize",
+        "version": __version__,
+        "title": title,
+        "disclaimer": ("Information, not advice. A Medicare benchmark is not a price "
+                       "cap and NADAC is acquisition cost, not an allowed amount. "
+                       "Only findings with recoverable=true represent a directly "
+                       "disputable amount."),
+        "summary": {
+            "lines": len(lines),
+            "total_charges": round(total, 2),
+            "findings": len(findings),
+            "disputable_line_items": round(
+                min(sum(f.amount for f in line_level), total), 2),
+            "whole_bill_protections": len(whole_bill),
+        },
+        "context": ctx.to_dict() if ctx else None,
+        "next_actions": next_actions(findings, ctx),
+        "findings": [f.to_dict() for f in findings],
+        "lines": [
+            {"idx": l.idx, "date": l.date, "code": l.code, "ndc": l.ndc,
+             "description": l.desc or ref.describe(l.code), "units": l.units,
+             "unit_price": l.unit_price, "charge": round(l.charge, 2),
+             "revenue_code": l.revenue_code, "modifiers": list(l.modifiers or [])}
+            for l in lines
+        ],
+        "reference_data": {
+            "built": ref.manifest.get("built"),
+            "sources": ref.manifest.get("sources", []),
+            "stale": [{"dataset": n, "age_days": a, "refresh_days": lim}
+                      for n, a, lim in ref.stale_datasets()],
+        },
+    }
+    return _json.dumps(payload, indent=2, sort_keys=False)

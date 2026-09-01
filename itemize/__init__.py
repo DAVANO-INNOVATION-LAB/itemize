@@ -1,3 +1,3 @@
 """itemize — check an itemized medical bill against public federal data."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

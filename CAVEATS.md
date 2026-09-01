@@ -87,6 +87,11 @@ checks did not fire.
 * **The MS-DRG table covers only DRGs with enough Medicare discharges** for CMS
   to publish without identifying patients. A DRG outside it says so rather than
   going quiet.
+* **A published price is specific to a setting.** A hospital publishes different
+  prices for inpatient and outpatient care. Findings name the setting a price came
+  from and say so when the file also publishes others for the same code, but
+  itemize cannot tell from your bill alone which setting you were treated in —
+  that check is yours. `--mrf-setting` restricts the lookup if you know.
 * **`--mrf` depends entirely on the file your hospital published.** Compliance
   is uneven: roughly 40% of hospitals were reported out of compliance as of
   April 2026 — files missing, wrongly formatted, or unreadable by CMS's own
@@ -195,6 +200,12 @@ the date in `web/data/manifest.json` and may change.
 ---
 
 ## 8. Data freshness
+
+**Staleness is reported as a finding**, in the browser and the evidence packet
+alike, because reference data going quietly out of date is the failure this
+project is least able to detect from the inside — the numbers still look
+authoritative. `itemize data` shows the age of each dataset and
+`itemize data --refresh` re-downloads it.
 
 CMS updates HCPCS, ASP and DMEPOS **quarterly**, NADAC **weekly**, and the
 inpatient MS-DRG averages **annually**. The shipped reference data is a

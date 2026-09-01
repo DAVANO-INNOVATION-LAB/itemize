@@ -7,18 +7,28 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the floor the README and pyproject.toml claim. It is past
+        # upstream end-of-life (Oct 2025), and it is kept deliberately: this tool
+        # is for people in medical debt, who are the least likely to be on a
+        # current interpreter, and it costs nothing to support because there are
+        # no dependencies and no new-syntax features in use. Testing it is what
+        # turns that claim into something verified rather than asserted.
+        python-version: ['3.9', '3.11', '3.14']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.9'
+          python-version: ${{ matrix.python-version }}
 
       # Node is required for the Python/JavaScript rule-engine parity tests.
       # Without it those tests skip, and the two engines can drift unnoticed.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Run tests
         run: python3 -m unittest discover -s tests -v
@@ -32,7 +42,19 @@ jobs:
           print("node present; parity tests ran")
           PY
 
-      - name: Check reference data is loadable
+      - name: Byte-compile every module
+        run: python3 -m compileall -q itemize tools tests
+
+  data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: Check reference data is loadable and complete
         run: |
           python3 - <<'PY'
           import json, os, sys
@@ -46,16 +68,69 @@ jobs:
           for d in ("hcpcs", "asp", "dmepos", "nadac", "drg"):
               if d not in datasets:
                   sys.exit(f"manifest has no provenance entry for {d}")
-          print(f"{len(m.get('sources', []))} data sources with provenance")
+          # Every source must date itself; staleness is judged per dataset, and a
+          # source with no date silently reads as fresh forever.
+          for s in m["sources"]:
+              if not s.get("retrieved"):
+                  sys.exit(f"source {s['dataset']} has no `retrieved` date")
+          print(f"{len(m['sources'])} data sources, all dated")
+          PY
+
+      - name: Report reference data age
+        run: python3 -m itemize data || true
+
+      - name: Fail if the offline shell is missing a shipped dataset
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          shell = open("web/sw.js").read()
+          for name in ("hcpcs", "asp", "dmepos", "nadac", "drg", "states", "manifest"):
+              if f"data/{name}.json" not in shell:
+                  sys.exit(f"web/sw.js does not cache data/{name}.json; "
+                           "the page would lose it offline")
+          print("offline shell covers every shipped dataset")
           PY
 
       - name: Fail if a teaching case is no longer solvable
         run: |
           set -e
           for c in $(python3 -c "from itemize import teaching; print(' '.join(c['id'] for c in teaching.CASES))"); do
-            python3 -m itemize.cli teach score "$c" > /dev/null
+            python3 -m itemize teach score "$c" > /dev/null
           done
           echo "all teaching cases solved"
 
-      - name: Byte-compile every module
-        run: python3 -m compileall -q itemize tools tests
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: Build the wheel and sdist
+        run: |
+          python3 -m pip install --quiet --upgrade build
+          python3 -m build
+
+      - name: Install the wheel into a clean environment and run it
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/python -m pip install --quiet dist/*.whl
+          /tmp/venv/bin/itemize --version
+          /tmp/venv/bin/itemize teach list
+          # The installed package must carry no third-party dependencies. That
+          # is a promise the README makes to anyone deploying this for others,
+          # so it is checked rather than trusted.
+          /tmp/venv/bin/python - <<'PY'
+          import importlib.metadata as md, sys
+          reqs = md.requires("itemize") or []
+          if reqs:
+              sys.exit(f"itemize must have no dependencies, found: {reqs}")
+          installed = {d.metadata["Name"].lower() for d in md.distributions()}
+          allowed = {"itemize", "pip", "setuptools", "wheel"}
+          extra = installed - allowed
+          if extra:
+              sys.exit(f"unexpected packages pulled in: {sorted(extra)}")
+          print("zero third-party dependencies, confirmed in a clean venv")
+          PY

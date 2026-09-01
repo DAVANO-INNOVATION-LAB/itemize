@@ -22,6 +22,7 @@ const CACHE = 'itemize';
 const SHELL = [
   './', './index.html', './style.css', './rules.js', './app.js', './pdf.js',
   './data/hcpcs.json', './data/asp.json', './data/dmepos.json',
+  './data/nadac.json', './data/drg.json',
   './data/states.json', './data/manifest.json',
 ];
 

@@ -1,5 +1,74 @@
 # Changelog
 
+## 0.3.0 — 2026-09-01
+
+A maturation pass over every feature, plus the dependency and reference-data
+upgrades that had gone unattended.
+
+### Fixed
+
+* **A published price could be attached to the wrong setting.** `itemize/mrf.py`
+  folded every `standard_charges` entry of a record into one row, taking the last
+  non-null value of each field while keeping the *first* setting label. A knee
+  arthroscopy came back tagged `outpatient` carrying the **inpatient** cash price —
+  $15,000 instead of $4,000 — so a day-surgery patient would have been shown a
+  sourced, confident, wrong number. Each setting is now its own row, findings name
+  the setting they came from and flag when the file publishes others for the same
+  code, and `--mrf-setting` restricts the lookup.
+* **The offline shell lost two datasets.** `web/sw.js` was never updated when
+  NADAC and MS-DRG were added in 0.2.0, so the page that promises to work offline
+  silently dropped both on reload. A test and a CI step now fail if any shipped
+  dataset is missing from the shell.
+* **Citations claimed the wrong retrieval date.** Every source was cited with the
+  manifest's build date, so a dataset carried forward by `--skip` was presented to
+  a billing office with a date it was not fetched on. Each source now records and
+  cites its own `retrieved`.
+
+### Added
+
+* **Staleness is a finding, not a footnote.** Reference data going quietly out of
+  date is the failure this project is least able to detect from the inside, so
+  `stale_reference_data` fires in both engines with per-dataset windows — 45 days
+  for weekly NADAC, 120 for the quarterly CMS files, 400 for the annual DRG
+  averages — and is diffed by the parity suite.
+* **`itemize data`** reports the age of every dataset; `--refresh` re-downloads
+  from CMS.
+* **Packaging.** `pyproject.toml`, an `itemize` console script, and `python3 -m
+  itemize`. The builder moved into the package so an installed copy can refresh
+  its own data. Reference data is deliberately *not* in the wheel — CMS reissues
+  it quarterly, and a pinned wheel would ship stale prices with nothing to signal
+  it. CI installs the wheel into a clean virtualenv and fails if anything at all
+  was pulled in alongside it.
+* **`--format json`** on `audit`, for another program to read.
+* **`--version`**, with a test that fails if it drifts from `pyproject.toml`.
+* Two teaching cases: `inpatient-stay` (the DRG comparison as context, carrying no
+  disputable amount) and `ambulance-erisa`, which runs the same bill twice to show
+  a state protection drop from HIGH to a note purely because the plan is
+  self-funded — the single most consequential question in the tool.
+* NADAC citations now carry the effective date of the prices, not just the
+  retrieval date.
+
+### Upgraded
+
+* `actions/checkout`, `actions/setup-python` and `actions/setup-node` v4/v5/v4 → **v7**.
+* CI Node 20 (EOL April 2026) → **24**.
+* CI now tests a **Python 3.9 / 3.11 / 3.14 matrix**. 3.9 is past upstream
+  end-of-life and is kept deliberately: this tool is for people in medical debt,
+  who are least likely to be on a current interpreter, and supporting it costs
+  nothing with no dependencies. Testing it turns the README's floor into something
+  verified rather than asserted.
+* Reference data rebuilt: HCPCS July → **October 2026** (8,725 → 8,769 codes),
+  NADAC → 2026-09-02 (32,436 → 32,602 NDCs), ASP and DMEPOS re-fetched.
+
+### Note
+
+There are still no third-party dependencies, and there is no plan for any. The
+PDF extractor, the gigabyte-scale MRF reader and the data build are all written
+against the standard library on purpose: this tool reads people's medical bills,
+and every dependency is one more thing a deployer must audit and one more way the
+"nothing leaves your machine" promise can quietly stop being true.
+
+
 ## 0.2.0 — 2026-08-19
 
 ### Fixed

@@ -125,6 +125,74 @@ A4550,SURGICAL TRAY,30.00,24.00,6.00
         ],
     },
     {
+        "id": "inpatient-stay",
+        "title": "An inpatient stay, priced against its DRG",
+        "level": "intermediate",
+        "setup": ("A three-day admission. The teaching point is that the DRG "
+                  "comparison is CONTEXT: it carries no disputable amount, and the "
+                  "money on this bill is in the duplicate and the equipment line, "
+                  "not in the headline total."),
+        "context": {"insured": False, "drg": "470"},
+        "bill": """Date,Code,Description,Qty,Charges
+2026-06-02,,ROOM AND BOARD SEMI PRIVATE,3,"9,300.00"
+2026-06-02,J1885,KETOROLAC TROMETHAMINE INJ 15MG,4,"1,440.00"
+2026-06-02,J1885,KETOROLAC TROMETHAMINE INJ 15MG,4,"1,440.00"
+2026-06-02,E0114,CRUTCHES UNDERARM PAIR,1,890.00
+2026-06-02,,PHARMACY GENERAL,1,"4,120.00"
+""",
+        "seeded": [
+            ("exact_duplicate", [2, 3],
+             "The ketorolac line is posted twice. This is the actual money here, "
+             "and the only directly recoverable finding on the bill."),
+            ("asp_benchmark", [2, 3],
+             "Billed far above the Medicare Part B limit. Leverage for a self-pay "
+             "or assistance request, not proof of an error."),
+            ("dmepos_benchmark", [4],
+             "Crutches at many times the DMEPOS allowance. Ask whether the item "
+             "was rented or purchased."),
+            ("missing_code", [1, 5],
+             "Room and board and a pharmacy total carry no procedure code. Nearly "
+             "half the bill cannot be checked until those are itemised."),
+            ("drg_benchmark", [],
+             "Whole-bill context against CMS's national average for DRG 470. Note "
+             "it carries NO dollar amount -- submitted charges are list prices "
+             "almost nobody pays, and this statement may not cover the whole stay."),
+            ("right_gfe_missing", [],
+             "A self-pay patient was owed a written Good Faith Estimate before "
+             "scheduled care."),
+        ],
+    },
+    {
+        "id": "ambulance-erisa",
+        "title": "A ground ambulance, and the one question that decides everything",
+        "level": "advanced",
+        "setup": ("Ground ambulance is a deliberate federal carve-out, so state law "
+                  "is the only protection -- and state insurance law does not reach "
+                  "self-funded employer plans, which cover roughly two-thirds of "
+                  "workers with employer coverage. Run this case twice, once with "
+                  "plan_funding fully_insured and once self_funded, and watch the "
+                  "same protection drop from HIGH to a note. That single question "
+                  "moves more than any coding finding in this tool."),
+        "context": {"insured": True, "state": "CO", "plan_funding": "self_funded",
+                    "ground_ambulance": True},
+        "bill": """Date,Code,Description,Qty,Charges
+2026-07-19,A0429,AMBULANCE SERVICE BLS EMERGENCY TRANSPORT,1,"2,450.00"
+2026-07-19,A0425,GROUND MILEAGE PER STATUTE MILE,12,840.00
+""",
+        "seeded": [
+            ("right_ambulance_gap", [],
+             "The No Surprises Act deliberately excludes ground ambulance. Federal "
+             "protection does not apply, whatever the plan."),
+            ("state_ambulance_protected", [],
+             "Colorado does fill the gap -- but this reader's plan is self-funded, "
+             "so the finding is demoted to a note rather than reported as a right. "
+             "Change plan_funding to fully_insured and it becomes HIGH."),
+            ("state_assistance_program", [],
+             "A state assistance programme applies regardless of plan funding, "
+             "because it regulates providers rather than insurers."),
+        ],
+    },
+    {
         "id": "equipment",
         "title": "Durable medical equipment and a mis-posted revenue code",
         "level": "advanced",

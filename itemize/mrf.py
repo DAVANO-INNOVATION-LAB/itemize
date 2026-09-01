@@ -126,7 +126,16 @@ def _iter_json_objects(stream, head, key="standard_charge_information"):
 
 
 def _from_json_record(rec):
-    """Flatten one standard_charge_information object into per-code rows."""
+    """Flatten one standard_charge_information object into per-code rows.
+
+    ONE ROW PER standard_charges ENTRY, not one per record. A hospital publishes
+    a separate price for each setting and billing class, and folding them
+    together silently mixes them: an earlier version of this took the last
+    non-null value of each field while keeping the FIRST setting label, so a
+    knee arthroscopy came back tagged `outpatient` carrying the inpatient cash
+    price. A reader having day surgery would have been told, with a citation,
+    that their hospital's published price was the inpatient one.
+    """
     desc = (rec.get("description") or "").strip()
     codes = []
     for ci in rec.get("code_information") or []:
@@ -136,19 +145,31 @@ def _from_json_record(rec):
     if not codes:
         return []
 
-    gross = cash = lo = hi = None
-    setting = ""
+    out = []
     for sc in rec.get("standard_charges") or []:
-        gross = _num(sc.get("gross_charge"), gross)
-        cash = _num(sc.get("discounted_cash"), cash)
-        lo = _num(sc.get("minimum"), lo)
-        hi = _num(sc.get("maximum"), hi)
-        setting = setting or str(sc.get("setting") or "")
-    if gross is None and cash is None:
-        return []
-    return [{"code": c, "type": t, "desc": desc, "gross": gross,
-             "cash": cash, "min": lo, "max": hi, "setting": setting}
-            for c, t in codes]
+        gross = _num(sc.get("gross_charge"))
+        cash = _num(sc.get("discounted_cash"))
+        lo = _num(sc.get("minimum"))
+        hi = _num(sc.get("maximum"))
+        # Payer-specific dollar amounts became mandatory under the CY2026 rule;
+        # they bound min/max when a hospital omits those.
+        payers = [p for p in (
+            _num(pi.get("standard_charge_dollar"))
+            for pi in (sc.get("payers_information") or [])) if p]
+        if payers:
+            lo = min([lo] + payers) if lo else min(payers)
+            hi = max([hi] + payers) if hi else max(payers)
+        if gross is None and cash is None and lo is None:
+            continue
+        for c, t in codes:
+            out.append({
+                "code": c, "type": t, "desc": desc, "gross": gross, "cash": cash,
+                "min": lo, "max": hi,
+                "setting": str(sc.get("setting") or "").strip().lower(),
+                "billing_class": str(sc.get("billing_class") or "").strip().lower(),
+                "payers": len(payers),
+            })
+    return out
 
 
 def _num(v, default=None):
@@ -221,17 +242,27 @@ def _from_csv_row(row, header, cols):
     if gross is None and cash is None:
         return []
     return [{"code": c, "type": t, "desc": desc, "gross": gross, "cash": cash,
-             "min": lo, "max": hi, "setting": get("setting")} for c, t in codes]
+             "min": lo, "max": hi,
+             "setting": get("setting").strip().lower(),
+             "billing_class": get("billing_class").strip().lower(),
+             "payers": 0} for c, t in codes]
 
 
 # ------------------------------------------------------------------ index
-def index_for(src, wanted):
+def index_for(src, wanted, setting=None):
     """Best published prices for `wanted` codes. Returns (index, scanned).
 
     Only the codes on the reader's bill are retained -- an MRF holds tens of
     thousands of rows and we have no reason to keep any of the rest.
+
+    `setting` ("inpatient" / "outpatient") restricts to prices published for
+    that setting. Without it, prices from every setting compete and the cheapest
+    wins, but the row records which setting it came from and whether others
+    existed, so a finding can say so instead of quietly comparing an outpatient
+    line against an inpatient price.
     """
     want = {str(c).strip().upper() for c in wanted if str(c or "").strip()}
+    keep = (setting or "").strip().lower()
     index, scanned = {}, 0
     stream = _open(src)
     try:
@@ -244,11 +275,19 @@ def index_for(src, wanted):
                 code = row["code"]
                 if code not in want:
                     continue
+                if keep and row.get("setting") and row["setting"] != keep:
+                    continue
                 cur = index.get(code)
+                if cur is None:
+                    row = dict(row, settings_seen={row.get("setting") or ""})
+                    index[code] = row
+                    continue
+                cur["settings_seen"].add(row.get("setting") or "")
                 # Keep the lowest published cash price for the code: it is the
                 # number the reader can actually ask to be charged.
-                if cur is None or _better(row, cur):
-                    index[code] = row
+                if _better(row, cur):
+                    seen = cur["settings_seen"]
+                    index[code] = dict(row, settings_seen=seen)
     finally:
         try:
             stream.close()
@@ -337,6 +376,7 @@ def compare(lines, index, source, ctx=None):
                        "The cash price generally applies to self-pay patients rather "
                        "than to insured claims, so check which applies to you before "
                        "relying on it. ")
+                    + _setting_note(row)
                     + "This is the strongest question on this page, but it is still a "
                       "question: a published cash price may carry conditions such as "
                       "paying in full or not billing insurance. It is not counted as "
@@ -375,6 +415,28 @@ def compare(lines, index, source, ctx=None):
             recoverable=True,
         ))
     return out
+
+
+def _setting_note(row):
+    """Say which setting a published price came from, and if others existed.
+
+    A hospital publishes a different price for inpatient and outpatient, and
+    comparing across them is meaningless. Naming the setting is what lets the
+    reader notice a mismatch we cannot detect from the bill alone.
+    """
+    setting = row.get("setting") or ""
+    seen = {s for s in (row.get("settings_seen") or set()) if s}
+    bits = []
+    if setting:
+        bits.append(f"This price is the one published for **{setting}** care")
+        if len(seen) > 1:
+            others = ", ".join(sorted(seen - {setting}))
+            bits.append(f"and the file also publishes {others} prices for this code, "
+                        "which are different numbers -- check that you are comparing "
+                        "the setting you were actually treated in")
+        bits.append(". ")
+        return "".join(bits[:-1]) + bits[-1]
+    return ""
 
 
 def _money(n):

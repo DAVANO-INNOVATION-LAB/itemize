@@ -9,7 +9,8 @@ Medicare allows or what pharmacies pay, and lines billed above your hospital's
 own published cash price — then produces a sourced evidence packet you can hand
 to a billing office.
 
-Runs entirely on your own machine. Zero third-party dependencies. Python 3.9+.
+Runs entirely on your own machine. **Zero third-party dependencies** — that is a
+promise CI checks in a clean virtualenv, not a claim. Python 3.9+.
 
 > **Read [CAVEATS.md](CAVEATS.md) before relying on anything this tool says.**
 > It is information, not advice; a Medicare benchmark is not a price cap; and
@@ -77,6 +78,7 @@ them.
 | Unspecified codes | CMS HCPCS Level II | `J3490`, `A9270`, `E1399` — "we won't say what this was" |
 | Unrecognised codes | CMS HCPCS Level II | Internal chargemaster codes that don't match a billing code |
 | NCCI unbundling | *your own* AMA licence | Code pairs CMS says can't be billed together |
+| Stale reference data | the manifest | That a price benchmark is being drawn from figures CMS has since replaced |
 | Published cash price | *your* hospital's price file | Lines billed above the discounted cash price the hospital publishes and attests to — see *Your hospital's own prices* below |
 
 ### State law
@@ -131,6 +133,20 @@ partial rebuild, and a skipped dataset keeps the file already on disk along with
 its old provenance entry, so the manifest never claims a build date the data
 does not have.
 
+**Install** (optional — the repo works as-is):
+
+```bash
+pip install .
+itemize data --refresh
+itemize --version
+```
+
+An installed copy has no `web/data` to read, so it keeps reference data in your
+platform's user-data directory and fetches it with `itemize data --refresh`. The
+data is deliberately **not** packaged in the wheel: CMS reissues it quarterly, and
+a wheel pinned to one quarter would ship stale prices to everyone who installed
+it, with nothing to signal it from the inside.
+
 **Command line:**
 
 ```bash
@@ -148,6 +164,33 @@ python3 -m itemize.cli audit bill.csv --self-pay --drg 470
 ```bash
 python3 -m itemize.cli letter assistance
 ```
+
+```bash
+python3 -m itemize.cli audit bill.csv --format json      # for another program
+```
+
+### Knowing when the data went stale
+
+Every price finding is only as good as the file behind it, and a stale file fails
+silently — the numbers still look authoritative. So staleness is a **finding**,
+not a footnote, and it appears in the browser and the evidence packet alike.
+
+```bash
+python3 -m itemize.cli data              # how old is each dataset?
+python3 -m itemize.cli data --refresh    # re-download from CMS
+```
+
+| Dataset | CMS cadence | Reported stale after |
+|---|---|---|
+| HCPCS Level II | quarterly | 120 days |
+| Part B ASP | quarterly | 120 days |
+| DMEPOS | quarterly | 120 days |
+| NADAC | weekly | 45 days |
+| MS-DRG averages | annual | 400 days |
+
+Each source records its **own** retrieval date, so a dataset carried forward by
+`--skip` keeps the date it was actually fetched. A partial rebuild cannot make
+stale files look fresh.
 
 **Browser:**
 
@@ -173,8 +216,13 @@ python3 -m itemize.cli audit bill.csv --self-pay --mrf https://example-hospital.
 ```
 
 ```bash
-python3 -m itemize.cli mrf ./standardcharges.csv --codes J1885,A4550
+python3 -m itemize.cli mrf ./standardcharges.csv --codes J1885,A4550 --setting outpatient
 ```
+
+**Mind the setting.** A hospital publishes a different price for inpatient and
+outpatient care, and comparing across them is meaningless. Findings name the
+setting a price came from and say so when the file publishes others for the same
+code; `--mrf-setting inpatient|outpatient` restricts the lookup outright.
 
 The file is **streamed** — these run to gigabytes — and only the codes on your
 bill are retained. Nothing from it is written to disk, and nothing from it ships
@@ -303,7 +351,7 @@ command that reaches the network, and only after you accept the licence.
 ## Layout
 
 ```
-tools/build_data.py   fetch CMS files, filter to the public-domain subset
+tools/build_data.py   shim onto itemize/build_data.py, so the documented path works
 itemize/model.py      types, code classification, reference data + provenance
 itemize/context.py    coverage context (who is exposed to the charge)
 itemize/parse.py      CSV/TSV, column-aware and loose-text bill parsing
@@ -315,6 +363,7 @@ itemize/letters.py    letter drafts
 itemize/evidence.py   markdown evidence packet
 itemize/ncci.py       AMA-licensed tier (consent, fetch, unbundling)
 itemize/mrf.py        hospital price transparency files (streamed, CLI-only tier)
+itemize/build_data.py fetch CMS files, filter to the public-domain subset
 itemize/teaching.py   practice bills with seeded errors, and the key
 itemize/cli.py        command line
 web/rules.js          the same engine for the browser AND the parity harness

@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "itemize"
+version = "0.3.0"
+description = "Check an itemized medical bill against public federal data."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+keywords = ["medical-billing", "healthcare", "cms", "price-transparency", "patient-advocacy"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "Intended Audience :: Healthcare Industry",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Utilities",
+]
+
+# INTENTIONALLY EMPTY, and it is a feature rather than an oversight.
+#
+# This tool reads people's medical bills. Every dependency is a package that
+# could be compromised, that must be audited by anyone deploying this for
+# others, and that stands between a reader and the claim that nothing leaves
+# their machine. The whole thing runs on the standard library: the PDF text
+# extractor, the gigabyte-scale JSON reader in mrf.py and the data build are all
+# written out rather than imported. Keep it that way.
+dependencies = []
+
+[[project.authors]]
+name = "DAVANO Innovation Lab"
+
+[project.urls]
+Homepage = "https://github.com/DAVANO-INNOVATION-LAB/itemize"
+Source = "https://github.com/DAVANO-INNOVATION-LAB/itemize"
+Issues = "https://github.com/DAVANO-INNOVATION-LAB/itemize/issues"
+Changelog = "https://github.com/DAVANO-INNOVATION-LAB/itemize/blob/main/CHANGELOG.md"
+
+[project.scripts]
+itemize = "itemize.cli:main"
+
+[tool.setuptools]
+packages = ["itemize"]
+
+# Reference data is NOT packaged. It is ~2.7 MB, CMS reissues it quarterly, and
+# a wheel pinned to one quarter would ship stale prices to everyone who installed
+# it — with no way to tell from the inside. An installed copy gets its data with
+# `itemize data --refresh`, which writes to the per-user data directory and
+# records when it did, so `itemize data` can say how old it is.

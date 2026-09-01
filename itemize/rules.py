@@ -17,7 +17,7 @@ import re
 from collections import defaultdict
 
 from .context import Context
-from .model import Finding, classify, normalize_drg
+from .model import Finding, REFRESH_DAYS, classify, normalize_drg
 
 # Modifiers that most often carry an unbundling argument with them.
 MODIFIER_NOTES = {
@@ -452,6 +452,37 @@ def rule_drg_benchmark(lines, ref, ctx=None):
     )]
 
 
+def rule_stale_reference_data(lines, ref, ctx=None):
+    """Say out loud when the shipped reference data has gone out of date.
+
+    Every price finding on this page is only as good as the file behind it, and
+    a stale file fails silently: the numbers still look authoritative. CMS
+    updates HCPCS, ASP and DMEPOS quarterly and NADAC weekly. This is the same
+    discipline the state-law layer already applies to itself.
+    """
+    stale = ref.stale_datasets()
+    if not stale:
+        return []
+    worst = max(age - lim for _n, age, lim in stale)
+    names = ", ".join(f"{n} ({age} days old)" for n, age, lim in stale)
+    return [Finding(
+        rule="stale_reference_data",
+        severity="warn" if worst > 180 else "notice",
+        title=f"{len(stale)} reference dataset(s) are out of date",
+        detail=(f"{names}. Any price comparison drawn from these is being made "
+                "against figures that CMS has since replaced. Re-run "
+                "`python3 tools/build_data.py --out web/data` before relying on a "
+                "benchmark, and re-check any finding you have already sent. "
+                "Structural findings — duplicates, arithmetic, missing codes — do "
+                "not depend on this data and are unaffected."),
+        lines=[],
+        citation=("Ages computed from the `retrieved` date each source records in "
+                  "web/data/manifest.json, against the refresh cadence CMS "
+                  "publishes on: " + ", ".join(f"{k} {v}d" for k, v in
+                                               sorted(REFRESH_DAYS.items())) + "."),
+    )]
+
+
 def rule_modifier_flags(lines, ref, ctx=None):
     """Modifiers are parsed off the bill; these are the ones worth asking about."""
     out = []
@@ -538,6 +569,7 @@ RULES = (
     rule_nadac_benchmark,
     rule_dmepos_benchmark,
     rule_drg_benchmark,
+    rule_stale_reference_data,
     rule_modifier_flags,
     rule_revenue_code_mismatch,
     rule_unit_price_arithmetic,

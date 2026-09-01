@@ -5,6 +5,7 @@ import argparse
 import os
 import sys
 
+from . import __version__
 from . import letters as letters_mod
 from . import ncci as ncci_mod
 from .context import Context
@@ -92,7 +93,7 @@ def cmd_audit(args):
         codes = {l.code for l in lines if l.code}
         print(f"reading {args.mrf} …", file=sys.stderr)
         try:
-            index, scanned = mrf_mod.index_for(args.mrf, codes)
+            index, scanned = mrf_mod.index_for(args.mrf, codes, args.mrf_setting)
         except Exception as exc:                       # noqa: BLE001 -- report, don't crash
             print(f"warning: could not read the machine-readable file: {exc}",
                   file=sys.stderr)
@@ -106,7 +107,11 @@ def cmd_audit(args):
             findings.extend(mrf_mod.compare(lines, index, args.mrf, ctx))
             findings.sort(key=lambda f: (SEV_ORDER.get(f.severity, 9), -f.amount))
 
-    out = render(lines, findings, ref, title=args.title, ctx=ctx)
+    if args.format == "json":
+        from .evidence import to_json
+        out = to_json(lines, findings, ref, ctx=ctx, title=args.title)
+    else:
+        out = render(lines, findings, ref, title=args.title, ctx=ctx)
     if args.out:
         with open(args.out, "w") as f:
             f.write(out)
@@ -136,25 +141,26 @@ def cmd_mrf(args):
         print("give at least one code: --codes J1885,A4550", file=sys.stderr)
         return 2
     print(f"reading {args.source} …", file=sys.stderr)
-    index, scanned = mrf_mod.index_for(args.source, codes)
+    index, scanned = mrf_mod.index_for(args.source, codes, args.setting)
     print(f"scanned {scanned:,} records\n", file=sys.stderr)
     if not index:
         print("No published price found for any of those codes in that file.")
         return 1
     width = max(len(c) for c in index)
     print(f"{'CODE'.ljust(width)}  {'GROSS':>12}  {'CASH':>12}  {'MIN':>12}  "
-          f"{'MAX':>12}  DESCRIPTION")
+          f"{'MAX':>12}  {'SETTING':<11}  DESCRIPTION")
     for code in codes:
         row = index.get(code)
         if not row:
             print(f"{code.ljust(width)}  {'—':>12}  {'—':>12}  {'—':>12}  "
-                  f"{'—':>12}  (not published in this file)")
+                  f"{'—':>12}  {'—':<11}  (not published in this file)")
             continue
 
         def col(v):
             return f"{v:,.2f}" if v else "—"
         print(f"{code.ljust(width)}  {col(row['gross']):>12}  {col(row['cash']):>12}  "
-              f"{col(row['min']):>12}  {col(row['max']):>12}  {row['desc'][:44]}")
+              f"{col(row['min']):>12}  {col(row['max']):>12}  "
+              f"{(row.get('setting') or '—'):<11}  {row['desc'][:38]}")
     print("\nPublished by the hospital under 45 CFR 180.50. A cash price generally "
           "applies to self-pay patients; check which applies to you.")
     return 0
@@ -234,6 +240,65 @@ def cmd_teach(args):
     return 0 if not misses else 1
 
 
+def cmd_data(args):
+    """Report how old the reference data is, and optionally refresh it."""
+    from .model import REFRESH_DAYS, default_data_dir
+
+    target = args.data or default_data_dir()
+
+    if args.refresh:
+        from .build_data import main as build_main
+        os.makedirs(target, exist_ok=True)
+        argv = ["--out", target] + (["--skip", args.skip] if args.skip else [])
+        try:
+            rc = build_main(argv)
+        except SystemExit as exc:            # build_data raises for CMS format changes
+            rc = exc.code
+        if rc:
+            return rc
+        print()
+
+    ref = Reference(target)
+    print(f"reference data: {target}")
+    if not ref.manifest.get("sources"):
+        print("\nNo manifest found. Nothing has been built here yet.")
+        print("Run: itemize data --refresh")
+        return 1
+
+    ages = ref.dataset_ages()
+    stale = dict((n, True) for n, _a, _l in ref.stale_datasets())
+    print(f"built:          {ref.manifest.get('built', 'unknown')}\n")
+    print(f"{'DATASET':<10} {'RECORDS':>9}  {'AGE':>8}  {'REFRESH':>8}  STATUS")
+    by_name = {s.get("dataset"): s for s in ref.manifest["sources"]}
+    for name, age, limit in ages:
+        src = by_name.get(name, {})
+        status = "STALE" if stale.get(name) else "ok"
+        if src.get("skipped_at"):
+            status += " (carried forward)"
+        print(f"{name:<10} {src.get('kept', 0):>9,}  {age:>5} d  {limit:>6} d  {status}")
+
+    counts = {
+        "hcpcs": len(ref.hcpcs), "asp": len(ref.asp), "dmepos": len(ref.dmepos),
+        "nadac": len(ref.nadac), "drg": len(ref.drg),
+    }
+    missing = [k for k, v in counts.items() if not v]
+    if missing:
+        print(f"\nnot present: {', '.join(missing)}")
+
+    states = (ref.states_raw or {}).get("states", {})
+    if states:
+        print(f"\nstate-law entries: {len(states)} of 51 researched "
+              f"(the rest report \"not researched\" rather than guessing)")
+
+    if stale:
+        print(f"\n{len(stale)} dataset(s) are past their refresh window. Any price "
+              "comparison\ndrawn from them uses figures CMS has since replaced. "
+              "Run: itemize data --refresh")
+        return 1
+    print("\nAll datasets are within their refresh window.")
+    return 0
+
+
 def cmd_ncci(args):
     if args.accept:
         ok = ncci_mod.request_consent()
@@ -252,6 +317,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(
         prog="itemize",
         description="Audit an itemized medical bill against public CMS data.")
+    p.add_argument("--version", action="version", version=f"itemize {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     a = sub.add_parser("audit", help="review a bill and write an evidence packet")
@@ -259,6 +325,9 @@ def main(argv=None):
     a.add_argument("-o", "--out", help="write markdown here (default: stdout)")
     a.add_argument("--data", help="reference data directory (default: web/data)")
     a.add_argument("--title", default="Itemized bill review")
+    a.add_argument("--format", choices=["markdown", "json"], default="markdown",
+                   help="markdown is the packet you hand to a billing office; "
+                        "json is the same review for another program to read")
     a.add_argument("--ncci", action="store_true",
                    help="also run NCCI unbundling checks (requires accepted AMA licence)")
     a.add_argument("--eob", help="EOB export to cross-check against (CSV)")
@@ -267,6 +336,10 @@ def main(argv=None):
                         "Compares each line against the hospital's own published "
                         "cash price. Streamed, so a multi-gigabyte file is fine; "
                         "nothing from it is written to disk.")
+    a.add_argument("--mrf-setting", choices=["inpatient", "outpatient"],
+                   help="restrict published prices to this setting. A hospital "
+                        "publishes different prices for inpatient and outpatient care, "
+                        "and comparing across them is meaningless.")
 
     c = a.add_argument_group(
         "coverage context",
@@ -304,6 +377,13 @@ def main(argv=None):
     lt.add_argument("-o", "--out")
     lt.set_defaults(func=cmd_letter)
 
+    d = sub.add_parser("data", help="show how old the reference data is, or refresh it")
+    d.add_argument("--refresh", action="store_true",
+                   help="re-download from CMS into the data directory")
+    d.add_argument("--skip", help="datasets to skip when refreshing, e.g. nadac,drg")
+    d.add_argument("--data", help="data directory (default: the resolved one)")
+    d.set_defaults(func=cmd_data)
+
     t = sub.add_parser("teach", help="practice bills with seeded errors, and the key")
     t.add_argument("action", choices=["list", "show", "key", "score"])
     t.add_argument("case", nargs="?", help="case id, from `itemize teach list`")
@@ -316,6 +396,8 @@ def main(argv=None):
                    help="the hospital's machine-readable file (JSON or CSV)")
     m.add_argument("--codes", required=True,
                    help="comma-separated codes to look up, e.g. J1885,A4550")
+    m.add_argument("--setting", choices=["inpatient", "outpatient"],
+                   help="restrict to prices published for this setting")
     m.set_defaults(func=cmd_mrf)
 
     n = sub.add_parser("ncci", help="manage the AMA-licensed NCCI edit files")

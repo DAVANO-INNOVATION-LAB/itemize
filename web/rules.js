@@ -23,6 +23,10 @@
   // legitimately, so these thresholds are deliberately far higher than the ASP ones.
   const NADAC_NOTICE_MULTIPLE = 10.0, NADAC_HIGH_MULTIPLE = 50.0;
   const DRG_NOTICE_MULTIPLE = 2.0;
+  // How long each dataset stays believable before we say so out loud, in days.
+  // Measures when the data was last REFRESHED, not when CMS last published --
+  // that is the number a reader can act on. Mirrors REFRESH_DAYS in model.py.
+  const REFRESH_DAYS = { hcpcs: 120, asp: 120, dmepos: 120, nadac: 45, drg: 400 };
   const GFE_DISPUTE_THRESHOLD = 400.0;
   const SEV_ORDER = { high: 0, warn: 1, notice: 2, info: 3 };
   const PRICE_RULES = new Set(['asp_benchmark', 'dmepos_benchmark', 'nadac_benchmark']);
@@ -111,10 +115,34 @@
     const r = this.dmepos[(c || '').toUpperCase()];
     return r ? [r.fee, r.cat || ''] : [null, null];
   };
+  /* The date is the SOURCE's own `retrieved`, not the manifest build date: a
+   * dataset carried forward by --skip was fetched earlier, and citing today's
+   * build date for it would put a false date in front of a billing office. */
   Reference.prototype.cite = function (dataset) {
     const s = (this.manifest.sources || []).find((x) => x.dataset === dataset);
     if (!s) return `${dataset} (provenance unavailable -- run tools/build_data.py)`;
-    return `${s.member} from ${s.url} (sha256 ${(s.sha256 || '').slice(0, 12)}, retrieved ${this.manifest.built || 'unknown'})`;
+    const when = s.retrieved || this.manifest.built || 'unknown';
+    const asof = s.asof ? `, prices effective ${s.asof}` : '';
+    return `${s.member} from ${s.url} (sha256 ${(s.sha256 || '').slice(0, 12)}, retrieved ${when}${asof})`;
+  };
+  /* [[dataset, ageDays, limitDays]] for every source carrying a date. */
+  Reference.prototype.datasetAges = function (today) {
+    const now = today ? new Date(today) : new Date();
+    const out = [];
+    for (const src of (this.manifest.sources || [])) {
+      const name = src.dataset;
+      const stamp = src.retrieved || this.manifest.built || '';
+      if (!name || !stamp) continue;
+      const when = new Date(String(stamp).slice(0, 10) + 'T00:00:00Z');
+      if (isNaN(when.getTime())) continue;
+      const ref = new Date(now.toISOString().slice(0, 10) + 'T00:00:00Z');
+      const age = Math.round((ref - when) / 86400000);
+      out.push([name, age, REFRESH_DAYS[name] === undefined ? 180 : REFRESH_DAYS[name]]);
+    }
+    return out.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  };
+  Reference.prototype.staleDatasets = function (today) {
+    return this.datasetAges(today).filter(([, age, lim]) => age > lim);
   };
 
   /* ----------------------------------------------------------- context */
@@ -573,6 +601,32 @@
     })];
   }
 
+  /* Say out loud when the shipped reference data has gone out of date.
+   * Every price finding is only as good as the file behind it, and a stale file
+   * fails silently -- the numbers still look authoritative. Mirrors
+   * rule_stale_reference_data in itemize/rules.py. */
+  function ruleStaleReferenceData(lines, ref) {
+    const stale = ref.staleDatasets();
+    if (!stale.length) return [];
+    const worst = Math.max(...stale.map(([, age, lim]) => age - lim));
+    const names = stale.map(([n, age]) => `${n} (${age} days old)`).join(', ');
+    const cadence = Object.keys(REFRESH_DAYS).sort()
+      .map((k) => `${k} ${REFRESH_DAYS[k]}d`).join(', ');
+    return [F({
+      rule: 'stale_reference_data',
+      severity: worst > 180 ? 'warn' : 'notice',
+      title: `${stale.length} reference dataset(s) are out of date`,
+      detail: `${names}. Any price comparison drawn from these is being made against figures that `
+        + 'CMS has since replaced. Re-run `python3 tools/build_data.py --out web/data` before '
+        + 'relying on a benchmark, and re-check any finding you have already sent. Structural '
+        + 'findings — duplicates, arithmetic, missing codes — do not depend on this data and are '
+        + 'unaffected.',
+      lines: [],
+      citation: 'Ages computed from the `retrieved` date each source records in '
+        + 'web/data/manifest.json, against the refresh cadence CMS publishes on: ' + cadence + '.',
+    })];
+  }
+
   function ruleModifierFlags(lines) {
     const out = [];
     for (const l of lines) {
@@ -726,7 +780,7 @@
   // amount, so registry order does not affect output -- but keeping them aligned
   // makes a diff between the two engines readable.
   const RULES = [ruleExactDuplicates, ruleAspBenchmark, ruleNadacBenchmark,
-    ruleDmeposBenchmark, ruleDrgBenchmark,
+    ruleDmeposBenchmark, ruleDrgBenchmark, ruleStaleReferenceData,
     ruleModifierFlags, ruleRevenueCodeMismatch, ruleUnitPriceArithmetic,
     ruleUnclassified, ruleMissingCode, ruleSameCodeSameDay, ruleUnknownCode,
     ruleLicensed];
