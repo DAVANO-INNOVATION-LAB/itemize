@@ -46,6 +46,7 @@ def parse_shape(l):
         "charge": round(l.charge, 2), "date": l.date,
         "modifiers": list(l.modifiers or []), "revenue_code": l.revenue_code,
         "unit_price": round(l.unit_price or 0, 2), "ndc": l.ndc,
+        "suspect_columns": bool(l.suspect_columns),
     }
 
 
@@ -331,6 +332,73 @@ class TestParity(unittest.TestCase):
 
         # ...and the rules built on those fields agree too.
         self.assertParity(lines, label="unit price + NDC bill")
+
+    def test_parsers_agree_on_adversarial_bills(self):
+        """A battery drawn from real divergences a differential fuzzer found.
+
+        Each pattern below made the CLI and the browser read the same bill
+        differently -- inch marks silently dropping a charge in one engine, a
+        unit label read as a quantity in one and not the other, and so on.
+        """
+        cases = {
+            "inch marks": 'Date,Code,Description,Qty,Charges\n'
+                          '2026-03-14,A4550,5" CATHETER TUBING,2,120.00\n'
+                          '2026-03-14,A4649,2" GAUZE PAD,10,45.00\n',
+            "credits": "Date,Code,Description,Qty,Charges\n"
+                       "2026-03-14,J1885,KETOROLAC,1,180.00\n"
+                       "2026-03-14,,PATIENT PAYMENT,1,-500.00\n"
+                       '2026-03-14,,ADJUSTMENT,1,"(1,200.00)"\n',
+            "unit labels": "Date,Code,Description,Qty,Charges\n"
+                           "2026-03-14,J1885,KETOROLAC,2 EA,180.00\n"
+                           "2026-03-14,A4550,TRAY,3 doses,60.00\n",
+            "ndc in qty": "Date,Code,Description,Qty,Charges\n"
+                          "2026-03-14,J1885,KETOROLAC,00409-3799-01,180.00\n",
+            "infinite qty": "Date,Code,Description,Qty,Charges\n"
+                            "2026-03-14,A4550,TRAY,Infinity,100.00\n",
+            "ragged row": "Date,Code,Description,Qty,Charges\n"
+                          "2026-03-14,99283,ED VISIT,1,1,842.00\n",
+            "multiline field": 'Date,Code,Description,Qty,Charges\n'
+                               '2026-03-14,A4550,"WOUND CARE\nKIT",1,50.00\n',
+            "byte order mark": "\ufeffDate,Code,Description,Qty,Charges\n"
+                               "2026-03-14,J1885,KETOROLAC,2,180.00\n",
+            "control chars": "Date,Code,Description,Qty,Charges\n"
+                             "2026-03-14,J1885,nul\x00byte\ttab,1,10.00\n",
+            "long digit run": "x " + "9" * 5000 + " 1.00\n",
+            "embedded quotes": 'Date,Code,Description,Qty,Charges\n'
+                               '2026-03-14,A4550,PT SAID "OUCH",1,10.00\n',
+        }
+        for label, text in cases.items():
+            lines = parse(text)
+            py = [parse_shape(l) for l in lines]
+            p = subprocess.run([NODE, DRIVER],
+                               input=json.dumps({"mode": "parse", "text": text}),
+                               capture_output=True, text=True, timeout=60)
+            self.assertEqual(p.returncode, 0, p.stderr[:1000])
+            self.assertEqual(py, json.loads(p.stdout), f"parsers disagree on {label}")
+            if lines:
+                self.assertParity(lines, label=label)
+
+    def test_ragged_columns_rule_agrees(self):
+        lines = parse("Date,Code,Description,Qty,Charges\n"
+                      "2026-03-14,J1885,KETOROLAC,2,180.00\n"
+                      "2026-03-14,99283,ED VISIT,1,1,842.00\n")
+        got = self.assertParity(lines, label="ragged columns")
+        ragged = [f for f in got if f["rule"] == "ragged_columns"]
+        self.assertEqual(len(ragged), 1)
+        self.assertEqual(ragged[0]["amount"], 0)
+        self.assertFalse(ragged[0]["recoverable"])
+
+    def test_eob_parsers_agree_on_signed_amounts(self):
+        text = ("Code,Billed,Allowed,Patient Responsibility\n"
+                "J1885,180.00,42.00,-5.00\n"
+                "A4550,68.00,30.00,6.00\n")
+        py = parse_eob(text)
+        p = subprocess.run([NODE, DRIVER],
+                           input=json.dumps({"mode": "parse_eob", "text": text}),
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr[:1000])
+        self.assertEqual(py, json.loads(p.stdout), "EOB parsers disagree on signs")
+        self.assertEqual(py[0]["patient"], -5.0)
 
     def test_parsers_agree_on_pdf_style_columns(self):
         text = ("2026-03-14  99283  EMERGENCY DEPT VISIT LEVEL 3  1  1842.00\n"

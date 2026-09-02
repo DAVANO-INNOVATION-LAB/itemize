@@ -136,9 +136,16 @@ def _from_json_record(rec):
     price. A reader having day surgery would have been told, with a citation,
     that their hospital's published price was the inpatient one.
     """
-    desc = (rec.get("description") or "").strip()
+    # Everything here is coerced rather than trusted. These files are written by
+    # hundreds of different vendors and a large share fail CMS's own validator, so
+    # a number where a string belongs is an ordinary Tuesday -- and it must not
+    # take the whole audit down.
+    desc = str(rec.get("description") or "").strip()
     codes = []
-    for ci in rec.get("code_information") or []:
+    info = rec.get("code_information")
+    for ci in (info if isinstance(info, list) else []):
+        if not isinstance(ci, dict):
+            continue
         code = str(ci.get("code") or "").strip().upper()
         if code:
             codes.append((code, str(ci.get("type") or "").strip().upper()))
@@ -146,16 +153,21 @@ def _from_json_record(rec):
         return []
 
     out = []
-    for sc in rec.get("standard_charges") or []:
+    charges = rec.get("standard_charges")
+    for sc in (charges if isinstance(charges, list) else []):
+        if not isinstance(sc, dict):
+            continue
         gross = _num(sc.get("gross_charge"))
         cash = _num(sc.get("discounted_cash"))
         lo = _num(sc.get("minimum"))
         hi = _num(sc.get("maximum"))
         # Payer-specific dollar amounts became mandatory under the CY2026 rule;
         # they bound min/max when a hospital omits those.
+        pinfo = sc.get("payers_information")
         payers = [p for p in (
             _num(pi.get("standard_charge_dollar"))
-            for pi in (sc.get("payers_information") or [])) if p]
+            for pi in (pinfo if isinstance(pinfo, list) else [])
+            if isinstance(pi, dict)) if p]
         if payers:
             lo = min([lo] + payers) if lo else min(payers)
             hi = max([hi] + payers) if hi else max(payers)

@@ -25,6 +25,7 @@ process.stdin.on('end', () => {
       modifiers: l.modifiers || [], revenue_code: l.revenue_code || '',
       unit_price: Math.round((l.unit_price || 0) * 100) / 100,
       ndc: l.ndc || '',
+      suspect_columns: !!l.suspect_columns,
     }))));
     return;
   }

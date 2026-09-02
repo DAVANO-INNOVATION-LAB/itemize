@@ -452,6 +452,38 @@ def rule_drg_benchmark(lines, ref, ctx=None):
     )]
 
 
+def rule_ragged_columns(lines, ref, ctx=None):
+    """Rows with more fields than the header, where the columns cannot be trusted.
+
+    The usual cause is an unquoted thousands separator: a charge written
+    `1,842.00` splits into two fields, everything after it shifts left, and the
+    charge reads as $1.00. That is a silent three-orders-of-magnitude misread --
+    worse than a line we cannot read at all, because nothing about the output
+    looks wrong. Say so rather than quietly reporting the wrong number.
+    """
+    bad = [ln for ln in lines if getattr(ln, "suspect_columns", False)]
+    if not bad:
+        return []
+    return [Finding(
+        rule="ragged_columns",
+        severity="warn",
+        title=(f"{len(bad)} line(s) have more columns than the header, so their "
+               "values may be shifted"),
+        detail=(f"{'Line' if len(bad) == 1 else 'Lines'} "
+                f"{', '.join(str(l.idx) for l in bad[:20])}"
+                f"{' ...' if len(bad) > 20 else ''} split into more fields than the "
+                "header defines, which moves every value after the split into the "
+                "wrong column. The usual cause is an amount written 1,842.00 without "
+                "quotes around it: it becomes two fields and the charge reads as "
+                "$1.00. Check these lines against your paper bill before relying on "
+                "anything here, and if you can, re-export the file with quoted "
+                "fields or replace the commas in the amounts."),
+        lines=[l.idx for l in bad],
+        citation="Structural finding -- compares each row's field count against the "
+                 "header row of your own file; no external source.",
+    )]
+
+
 def rule_stale_reference_data(lines, ref, ctx=None):
     """Say out loud when the shipped reference data has gone out of date.
 
@@ -570,6 +602,7 @@ RULES = (
     rule_dmepos_benchmark,
     rule_drg_benchmark,
     rule_stale_reference_data,
+    rule_ragged_columns,
     rule_modifier_flags,
     rule_revenue_code_mismatch,
     rule_unit_price_arithmetic,

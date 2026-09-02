@@ -182,17 +182,51 @@
   const g = (n) => (Math.round(n * 1000) / 1000);
   const sum = (a, f) => a.reduce((s, x) => s + (f ? f(x) : x), 0);
 
+  /* The sign is CAPTURED, not skipped. Real statements carry credits -- payments,
+   * insurance adjustments, write-offs -- and reading "-500.00" as +500.00 inflates
+   * the total and lets two identical credit lines be reported as a duplicate
+   * CHARGE to dispute. Accounting parentheses count too. Mirrors RE_MONEY. */
+  const RE_MONEY = /(-|\()?\s*\$?\s*([\d,]+\.\d{2}|[\d,]+)/;
+  const RE_MONEY_G = /(-|\()?\s*\$?\s*([\d,]+\.\d{2}|[\d,]+)/g;
+  const RE_MONEY_FULL = /^(-|\()?\s*\$?\s*([\d,]+\.\d{2}|[\d,]+)$/;
+
   function money(s) {
     if (s == null) return 0;
-    const m = String(s).match(/-?\$?\s*([\d,]+\.\d{2}|[\d,]+)/);
+    const m = String(s).match(RE_MONEY);
     if (!m) return 0;
-    const v = parseFloat(m[1].replace(/,/g, ''));
-    return isNaN(v) ? 0 : v;
+    const v = parseFloat(m[2].replace(/,/g, ''));
+    if (isNaN(v)) return 0;
+    return m[1] ? -v : v;
   }
+  /* Positive FINITE quantity, or the default. parseFloat('Infinity') is greater
+   * than zero, so an infinite unit count used to sail through -- and it makes
+   * every price benchmark compute an infinite allowed amount, silently disabling
+   * all of them for that line. A gate that fails open is worse than one that
+   * fails loudly. Mirrors _num in itemize/parse.py. */
+  // A quantity, optionally followed by a short unit label: "2", "2.5", "2 EA".
+  // Anchored on purpose: parseFloat reads a PREFIX, so it turned the NDC
+  // 00409-3799-01 into 409 and gave the browser a different unit count from the
+  // CLI on the same bill. Mirrors RE_QTY / _num in itemize/parse.py.
+  const RE_QTY = /^([+-]?\d*\.?\d+)\s*[A-Za-z]{0,12}$/;
   function num(s, d) {
     d = d === undefined ? 1 : d;
-    const v = parseFloat(String(s == null ? '' : s).replace(/,/g, '').trim());
-    return (isNaN(v) || v <= 0) ? d : v;
+    const m = RE_QTY.exec(String(s == null ? '' : s).replace(/,/g, '').trim());
+    if (!m) return d;
+    const v = parseFloat(m[1]);
+    if (!isFinite(v)) return d;
+    return v <= 0 ? d : v;
+  }
+
+  /* Remove a trailing quantity/amount from a description.
+   * A backward scan rather than a regex: every regex spelling of "optional
+   * digits, optional dot, optional digits, at the end" retries from each start
+   * position, which is quadratic on a long numeric run and runs in the reader's
+   * browser. Mirrors _strip_trailing_number. */
+  function stripTrailingNumber(desc) {
+    const t = desc.replace(/\s+$/, '');
+    let j = t.length;
+    while (j > 0 && (/[0-9]/.test(t[j - 1]) || t[j - 1] === ',' || t[j - 1] === '.')) j--;
+    return t.slice(0, j);
   }
 
   /* ----------------------------------------------------------- parsing */
@@ -212,17 +246,60 @@
     ndc: ['ndc', 'ndc code', 'ndc number', 'national drug code', 'drug code'],
   };
 
-  function splitRow(line, delim) {
-    const out = []; let cur = '', q = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q;
-      } else if (ch === delim && !q) { out.push(cur); cur = ''; }
-      else cur += ch;
+  /* Tokenise a whole delimited document the way Python's csv module does.
+   *
+   * Two subtleties, both of which produced real divergences between this engine
+   * and the CLI:
+   *
+   * 1. A double quote is a QUOTING delimiter only at the START of a field.
+   *    Anywhere else it is literal. Toggling on every quote made
+   *    `5" CATHETER TUBING,2,120.00` swallow the following commas, so the
+   *    browser read that line as one field with no charge and silently dropped
+   *    it from the total while the CLI read $120.00. Inch marks are ordinary on
+   *    supply lines, so this was reachable on real bills.
+   *
+   * 2. A quoted field may span newlines. Splitting on newlines first, then
+   *    parsing each line, cannot see that -- so a description containing a line
+   *    break was read as one record by the CLI and two by the browser.
+   *
+   * Input has already had CRLF normalised to LF by parseBill. */
+  function parseRows(text, delim) {
+    const rows = [];
+    let row = [], cur = '', quoted = false, atFieldStart = true;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (quoted) {
+        if (ch === '"') {
+          if (text[i + 1] === '"') { cur += '"'; i++; } else quoted = false;
+        } else cur += ch;
+      } else if (ch === '"' && atFieldStart) {
+        quoted = true; atFieldStart = false;
+      } else if (ch === delim) {
+        row.push(cur); cur = ''; atFieldStart = true;
+      } else if (ch === '\n') {
+        row.push(cur); rows.push(row);
+        row = []; cur = ''; atFieldStart = true;
+      } else {
+        cur += ch; atFieldStart = false;
+      }
     }
-    out.push(cur);
-    return out.map((s) => s.trim());
+    row.push(cur);
+    rows.push(row);
+    return rows.map((r) => r.map((c) => c.trim()));
+  }
+
+  /* Collapse a field to a single line of printable text.
+   * A quoted CSV field may legally contain newlines, and the evidence packet is
+   * markdown a reader hands to a billing office: a description carrying
+   * "\n> **Source:** ..." forged a citation line into that packet. Descriptions
+   * are one line, so make them one line at the boundary. Mirrors _clean. */
+  // U+FEFF is in here on purpose. Excel writes a byte-order mark at the start of
+  // every CSV it exports, and String.trim() strips U+FEFF while Python's
+  // str.strip() does not -- so the same file produced a description with a
+  // leading BOM in the CLI and without one here.
+  const RE_CONTROL = /[\u0000-\u001f\u007f\ufeff]+/g;
+  function clean(text) {
+    return String(text == null ? '' : text).replace(RE_CONTROL, ' ').trim();
   }
 
   function mapHeaders(header) {
@@ -242,13 +319,16 @@
   }
 
   function parseDelimited(text) {
-    const raw = text.split('\n').filter((l) => l.trim());
-    if (!raw.length) return [];
+    const first = (text.split('\n').find((l) => l.trim()) || '');
+    if (!first) return [];
     const delim = [',', '\t', '|', ';']
-      .map((d) => [d, (raw[0].match(new RegExp(`\\${d}`, 'g')) || []).length])
+      .map((d) => [d, (first.match(new RegExp(`\\${d}`, 'g')) || []).length])
       .sort((a, b) => b[1] - a[1])[0][0];
 
-    const rows = raw.map((l) => splitRow(l, delim));
+    // Empty rows are dropped AFTER tokenising, exactly as csv.reader + the
+    // Python filter do; dropping them first would break multi-line fields.
+    const rows = parseRows(text, delim).filter((r) => r.some((c) => c.trim()));
+    if (!rows.length) return [];
     let hdrI = -1, cols = {};
     for (let i = 0; i < Math.min(rows.length, 25); i++) {
       const m = mapHeaders(rows[i]);
@@ -256,11 +336,12 @@
     }
     if (hdrI < 0) return [];
 
+    const width = rows[hdrI].length;
     const lines = [];
     for (let i = hdrI + 1; i < rows.length; i++) {
       const row = rows[i];
       const g = (f) => (cols[f] != null && cols[f] < row.length ? row[cols[f]].trim() : '');
-      const code = g('code').toUpperCase(), desc = g('desc'), chargeRaw = g('charge');
+      const code = clean(g('code')).toUpperCase(), desc = clean(g('desc')), chargeRaw = g('charge');
       if (!chargeRaw && !code && !desc) continue;
       if (!code && /\b(total|balance|subtotal|amount due)\b/i.test(desc)) continue;
       lines.push({
@@ -270,6 +351,7 @@
         revenue_code: g('revenue_code'),
         unit_price: money(g('unit_price')),
         ndc: normalizeNdc(g('ndc')) || normalizeNdc(code) || normalizeNdc(desc),
+        suspect_columns: row.length > width,
       });
     }
     return lines;
@@ -302,11 +384,14 @@
   function fromColumns(parts) {
     let chargeI = -1;
     for (let i = parts.length - 1; i >= 0; i--) {
-      if (/^\$?[\d,]+\.\d{2}$/.test(parts[i].trim())) { chargeI = i; break; }
+      const bare = parts[i].trim().replace(/\$/g, '').replace(/,/g, '');
+      if (RE_MONEY_FULL.test(bare) || /^\$?[\d,]+\.\d{2}$/.test(parts[i].trim())) {
+        chargeI = i; break;
+      }
     }
     if (chargeI < 0) return null;
     const charge = money(parts[chargeI]);
-    if (charge <= 0) return null;
+    if (charge === 0) return null;   // a credit is a real line; only zero is noise
 
     let date = '';
     for (const s of parts) { const m = s.match(RE_DATEISH); if (m) { date = m[1]; break; } }
@@ -340,7 +425,7 @@
       const s = raw.trim();
       if (s.length < 8) continue;
       if (/\b(total|balance due|subtotal|amount due|page \d)\b/i.test(s)) continue;
-      const monies = s.match(/-?\$?\s*([\d,]+\.\d{2}|[\d,]+)/g);
+      const monies = s.match(RE_MONEY_G);
       if (!monies) continue;
 
       const cols = s.split(/\s{2,}/);
@@ -350,30 +435,30 @@
           lines.push({
             idx: lines.length + 1, code: got.code, desc: got.desc, units: got.units,
             charge: got.charge, date: got.date, modifiers: [], revenue_code: '',
-            unit_price: 0, ndc: normalizeNdc(s),
+            unit_price: 0, ndc: normalizeNdc(s), suspect_columns: false,
           });
           continue;
         }
       }
 
       const charge = money(monies[monies.length - 1]);
-      if (charge <= 0) continue;
+      if (charge === 0) continue;   // a credit is a real line; only zero is noise
       const cm = s.match(/\b(\d{5}|[A-Za-z]\d{4})\b/);
       const dm = s.match(/\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2})\b/);
       const um = s.match(/\b(\d{1,3})\b(?=[^\d]*[\d,]+\.\d{2}\s*$)/);
       let desc = cm ? s.slice(s.indexOf(cm[1]) + cm[1].length) : s;
-      desc = desc.replace(/[\d,]*\.?\d*\s*$/, '').replace(/^[\s.\t|-]+|[\s.\t|-]+$/g, '');
+      desc = stripTrailingNumber(desc).replace(/^[\s.\t|-]+|[\s.\t|-]+$/g, '');
       lines.push({
         idx: lines.length + 1, code: cm ? cm[1].toUpperCase() : '', desc: desc.slice(0, 160),
         units: um ? num(um[1]) : 1, charge, date: dm ? dm[1] : '', modifiers: [], revenue_code: '',
-        unit_price: 0, ndc: normalizeNdc(s),
+        unit_price: 0, ndc: normalizeNdc(s), suspect_columns: false,
       });
     }
     return lines;
   }
 
   function parseBill(text) {
-    text = text.replace(/\r\n?/g, '\n');
+    text = text.replace(/\r\n?/g, '\n').replace(/^\ufeff/, '');
     const d = parseDelimited(text);
     return d.length ? d : parseText(text);
   }
@@ -391,12 +476,13 @@
 
   function parseEob(text) {
     text = (text || '').replace(/\r\n?/g, '\n');
-    const raw = text.split('\n').filter((l) => l.trim());
-    if (!raw.length) return [];
+    const first = (text.split('\n').find((l) => l.trim()) || '');
+    if (!first) return [];
     const delim = [',', '\t', '|', ';']
-      .map((d) => [d, (raw[0].split(d).length - 1)])
+      .map((d) => [d, (first.split(d).length - 1)])
       .sort((a, b) => b[1] - a[1])[0][0];
-    const rows = raw.map((l) => splitRow(l, delim));
+    const rows = parseRows(text, delim).filter((r) => r.some((c) => c.trim()));
+    if (!rows.length) return [];
 
     const mapHdr = (header) => {
       const out = {};
@@ -413,11 +499,15 @@
       });
       return out;
     };
+    // Signed, and null (not 0) when the field is absent: a missing column and a
+    // genuine $0.00 responsibility mean different things to the cross-check.
+    // Mirrors _money in itemize/eob.py.
     const m2 = (s) => {
-      const m = String(s || '').match(/-?\$?\s*([\d,]+\.\d{2}|[\d,]+)/);
+      const m = String(s || '').match(RE_MONEY);
       if (!m) return null;
-      const v = parseFloat(m[1].replace(/,/g, ''));
-      return isNaN(v) ? null : v;
+      const v = parseFloat(m[2].replace(/,/g, ''));
+      if (isNaN(v)) return null;
+      return m[1] ? -v : v;
     };
 
     let hdrI = -1, cols = {};
@@ -605,6 +695,30 @@
    * Every price finding is only as good as the file behind it, and a stale file
    * fails silently -- the numbers still look authoritative. Mirrors
    * rule_stale_reference_data in itemize/rules.py. */
+  /* Rows with more fields than the header, where the columns cannot be trusted.
+   * The usual cause is an unquoted thousands separator: `1,842.00` splits into
+   * two fields, everything after shifts left, and the charge reads as $1.00 --
+   * a silent three-orders-of-magnitude misread. Mirrors rule_ragged_columns. */
+  function ruleRaggedColumns(lines) {
+    const bad = lines.filter((l) => l.suspect_columns);
+    if (!bad.length) return [];
+    const idxs = bad.map((l) => l.idx);
+    return [F({
+      rule: 'ragged_columns',
+      severity: 'warn',
+      title: `${bad.length} line(s) have more columns than the header, so their values may be shifted`,
+      detail: `${bad.length === 1 ? 'Line' : 'Lines'} ${idxs.slice(0, 20).join(', ')}`
+        + `${idxs.length > 20 ? ' ...' : ''} split into more fields than the header defines, which `
+        + 'moves every value after the split into the wrong column. The usual cause is an amount '
+        + 'written 1,842.00 without quotes around it: it becomes two fields and the charge reads '
+        + 'as $1.00. Check these lines against your paper bill before relying on anything here, '
+        + 'and if you can, re-export the file with quoted fields or replace the commas in the amounts.',
+      lines: idxs,
+      citation: "Structural finding -- compares each row's field count against the header row of "
+        + 'your own file; no external source.',
+    })];
+  }
+
   function ruleStaleReferenceData(lines, ref) {
     const stale = ref.staleDatasets();
     if (!stale.length) return [];
@@ -780,7 +894,7 @@
   // amount, so registry order does not affect output -- but keeping them aligned
   // makes a diff between the two engines readable.
   const RULES = [ruleExactDuplicates, ruleAspBenchmark, ruleNadacBenchmark,
-    ruleDmeposBenchmark, ruleDrgBenchmark, ruleStaleReferenceData,
+    ruleDmeposBenchmark, ruleDrgBenchmark, ruleStaleReferenceData, ruleRaggedColumns,
     ruleModifierFlags, ruleRevenueCodeMismatch, ruleUnitPriceArithmetic,
     ruleUnclassified, ruleMissingCode, ruleSameCodeSameDay, ruleUnknownCode,
     ruleLicensed];

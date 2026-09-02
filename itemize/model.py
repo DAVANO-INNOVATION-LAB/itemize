@@ -108,6 +108,11 @@ class Line:
     # frequently carry one alongside the HCPCS code; it is what lets us price a
     # line against NADAC rather than only against the Part B ASP limits.
     ndc: str = ""
+    # True when the row carried MORE fields than the header, so the column
+    # mapping past that point cannot be trusted. The usual cause is a charge
+    # written "1,842.00" without quotes, which splits into two fields and reads
+    # as $1.00 -- silently, and wrong by three orders of magnitude.
+    suspect_columns: bool = False
     raw: str = ""
 
     @property

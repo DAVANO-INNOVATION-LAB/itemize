@@ -30,17 +30,22 @@ EOB_ALIASES = {
     "date": ("date", "service date", "date of service", "dos"),
 }
 
-RE_MONEY = re.compile(r"-?\$?\s*([\d,]+\.\d{2}|[\d,]+)")
+from .parse import RE_MONEY, _money_from  # noqa: E402
 
 
 def _money(s):
+    """Signed amount, or None when the field is absent.
+
+    The EOB had the same sign problem the bill parser did: a negative patient
+    responsibility -- a credit balance, an overpayment already refunded -- read
+    as positive, which inverts the one cross-check this project treats as
+    directly disputable. The sign now comes from the shared reader.
+
+    None, not 0.0, is the "no value" answer here: a missing column and a genuine
+    $0.00 responsibility mean different things to the cross-check.
+    """
     m = RE_MONEY.search(str(s or ""))
-    if not m:
-        return None
-    try:
-        return float(m.group(1).replace(",", ""))
-    except ValueError:
-        return None
+    return _money_from(m) if m else None
 
 
 def _map(header):

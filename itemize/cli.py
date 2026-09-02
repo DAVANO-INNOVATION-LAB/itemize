@@ -141,7 +141,13 @@ def cmd_mrf(args):
         print("give at least one code: --codes J1885,A4550", file=sys.stderr)
         return 2
     print(f"reading {args.source} …", file=sys.stderr)
-    index, scanned = mrf_mod.index_for(args.source, codes, args.setting)
+    try:
+        index, scanned = mrf_mod.index_for(args.source, codes, args.setting)
+    except Exception as exc:                       # noqa: BLE001 -- report, don't crash
+        print(f"could not read that machine-readable file: {exc}", file=sys.stderr)
+        print("Check the URL or path, and that it is the hospital's standard-charges "
+              "file rather than a landing page.", file=sys.stderr)
+        return 2
     print(f"scanned {scanned:,} records\n", file=sys.stderr)
     if not index:
         print("No published price found for any of those codes in that file.")

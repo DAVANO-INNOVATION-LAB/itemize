@@ -860,3 +860,201 @@ class TestMrfSettings(unittest.TestCase):
         self.assertIn("outpatient", f[0].detail)
         self.assertIn("inpatient", f[0].detail)
         self.assertIn("setting you were actually treated in", f[0].detail)
+
+
+class TestAdversarialParsing(unittest.TestCase):
+    """Regressions from a differential fuzz of the two engines.
+
+    Each of these was a real defect found by generating adversarial bills and
+    diffing the Python parser against the JavaScript one.
+    """
+
+    # ---- signed amounts
+    def test_credits_keep_their_sign(self):
+        """A statement's payments and adjustments are negative. Reading them as
+        positive inflated the total by twice the credit."""
+        lines = parse("Date,Code,Description,Qty,Charges\n"
+                      "2026-03-14,J1885,KETOROLAC,1,180.00\n"
+                      "2026-03-14,,PATIENT PAYMENT,1,-500.00\n"
+                      "2026-03-14,,INSURANCE ADJUSTMENT,1,\"(1,200.00)\"\n")
+        self.assertEqual([l.charge for l in lines], [180.0, -500.0, -1200.0])
+        self.assertAlmostEqual(sum(l.charge for l in lines), -1520.0)
+
+    def test_accounting_parentheses_are_negative(self):
+        from itemize.parse import _money
+        self.assertEqual(_money("(500.00)"), -500.0)
+        self.assertEqual(_money("-1,200.00"), -1200.0)
+        self.assertEqual(_money("1,842.00"), 1842.0)
+
+    def test_duplicated_credits_are_not_reported_as_a_disputable_charge(self):
+        """The sharpest consequence of the sign bug: a payment recorded twice was
+        reported as a duplicate CHARGE worth disputing, which would have sent a
+        reader to a billing office demanding money back for a credit."""
+        lines = parse("Date,Code,Description,Qty,Charges\n"
+                      "2026-03-14,,PATIENT PAYMENT,1,-500.00\n"
+                      "2026-03-14,,PATIENT PAYMENT,1,-500.00\n")
+        found = rules.audit(lines, FakeRef(), Context(insured=False))
+        self.assertFalse([f for f in found if f.recoverable and f.lines],
+                         "a duplicated credit must never be recoverable")
+
+    def test_eob_responsibility_keeps_its_sign(self):
+        from itemize.eob import parse_eob
+        rows = parse_eob("Code,Allowed,Patient Responsibility\nJ1885,42.00,-5.00\n")
+        self.assertEqual(rows[0]["patient"], -5.0)
+
+    def test_eob_absent_column_is_none_not_zero(self):
+        """A missing column and a genuine $0.00 responsibility mean different
+        things to the cross-check."""
+        from itemize.eob import parse_eob
+        rows = parse_eob("Code,Allowed,Patient Responsibility\nJ1885,42.00,6.00\n")
+        self.assertIsNone(rows[0]["plan_paid"])
+
+    # ---- quantities
+    def test_infinite_quantity_is_refused(self):
+        """float('Infinity') > 0, so it sailed through -- and an infinite unit
+        count makes every price benchmark compute an infinite allowed amount,
+        silently disabling all of them for that line."""
+        from itemize.parse import _num
+        for bad in ("Infinity", "-Infinity", "NaN", "inf"):
+            self.assertEqual(_num(bad), 1.0, bad)
+
+    def test_quantity_with_a_unit_label_is_read(self):
+        from itemize.parse import _num
+        self.assertEqual(_num("2 EA"), 2.0)
+        self.assertEqual(_num("3 doses"), 3.0)
+
+    def test_quantity_is_not_prefix_parsed_from_an_ndc(self):
+        """JavaScript's parseFloat reads a prefix, so '00409-3799-01' became 409
+        in the browser and 1 in the CLI -- different unit counts, and therefore
+        different overcharge multiples, for the same line."""
+        from itemize.parse import _num
+        self.assertEqual(_num("00409-3799-01"), 1.0)
+
+    def test_negative_quantity_falls_back_to_the_default(self):
+        from itemize.parse import _num
+        self.assertEqual(_num("-3"), 1.0)
+        self.assertEqual(_num("-0.5"), 1.0)
+
+    # ---- resource exhaustion
+    def test_long_numeric_run_parses_in_reasonable_time(self):
+        """A regex whose quantifiers could both match bare digits made a long
+        numeric run -- an account number, a barcode off a PDF text layer -- take
+        1.9s at 1,000 digits and hang at 20,000. It runs in the reader's browser."""
+        import time
+        t0 = time.time()
+        parse("x " + "9" * 20000 + " 1.00")
+        self.assertLess(time.time() - t0, 2.0, "parser is backtracking again")
+
+    # ---- injection and control characters
+    def test_description_is_collapsed_to_one_line(self):
+        """A quoted CSV field may contain newlines, and the evidence packet is
+        markdown handed to a billing office. A description carrying
+        '\\n> **Source:** ...' forged a citation line into that packet."""
+        lines = parse('Date,Code,Description,Qty,Charges\n'
+                      '2026-03-14,,"A\n> **Source:** FORGED\n### Fake",1,100.00\n')
+        self.assertNotIn("\n", lines[0].desc)
+        self.assertNotIn("\x00", parse(
+            'Date,Code,Description,Qty,Charges\n2026-03-14,,nul\x00byte,1,1.00\n')[0].desc)
+
+    def test_forged_citation_cannot_reach_the_evidence_packet(self):
+        from itemize.evidence import render
+        lines = parse('Date,Code,Description,Qty,Charges\n'
+                      '2026-03-14,,"A\n> **Source:** FORGED\n### 99. Fake",1,100.00\n'
+                      '2026-03-14,,"A\n> **Source:** FORGED\n### 99. Fake",1,100.00\n')
+        ref = FakeRef()
+        out = render(lines, rules.audit(lines, ref), ref)
+        self.assertEqual(0, sum(1 for l in out.split("\n")
+                                if l.startswith("> **Source:** FORGED")))
+
+    # ---- quoting
+    def test_inch_marks_do_not_swallow_the_rest_of_the_row(self):
+        """`5" CATHETER TUBING` is ordinary on a supply line. Treating a quote
+        anywhere in a field as a delimiter made the browser read the whole row as
+        one field with no charge, silently dropping it from the total."""
+        lines = parse('Date,Code,Description,Qty,Charges\n'
+                      '2026-03-14,A4550,5" CATHETER TUBING,2,120.00\n')
+        self.assertEqual(lines[0].code, "A4550")
+        self.assertEqual(lines[0].units, 2.0)
+        self.assertAlmostEqual(lines[0].charge, 120.00)
+
+    def test_multiline_quoted_field_is_one_record(self):
+        lines = parse('Date,Code,Description,Qty,Charges\n'
+                      '2026-03-14,A4550,"WOUND CARE\nKIT",1,50.00\n')
+        self.assertEqual(len(lines), 1)
+        self.assertAlmostEqual(lines[0].charge, 50.00)
+
+    def test_leading_byte_order_mark_is_ignored(self):
+        """Excel writes a BOM on every CSV it exports."""
+        plain = "Date,Code,Description,Qty,Charges\n2026-03-14,J1885,KETOROLAC,2,180.00\n"
+        self.assertEqual([parse_shape_lite(l) for l in parse(plain)],
+                         [parse_shape_lite(l) for l in parse("﻿" + plain)])
+
+    # ---- ragged rows
+    def test_unquoted_thousands_separator_is_flagged(self):
+        """`1,842.00` without quotes splits into two fields, everything shifts
+        left and the charge reads as $1.00 -- silently wrong by 1800x."""
+        lines = parse("Date,Code,Description,Qty,Charges\n"
+                      "2026-03-14,J1885,KETOROLAC,2,180.00\n"
+                      "2026-03-14,99283,ED VISIT,1,1,842.00\n")
+        self.assertFalse(lines[0].suspect_columns)
+        self.assertTrue(lines[1].suspect_columns)
+        found = rules.rule_ragged_columns(lines, FakeRef())
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].severity, "warn")
+        self.assertEqual(found[0].lines, [2])
+
+    def test_well_formed_bill_raises_no_ragged_finding(self):
+        with open(os.path.join(FIX, "sample_bill.csv")) as f:
+            lines = parse(f.read())
+        self.assertEqual(rules.rule_ragged_columns(lines, FakeRef()), [])
+
+
+def parse_shape_lite(l):
+    return (l.idx, l.code, l.desc, l.units, round(l.charge, 2), l.date)
+
+
+class TestMrfMalformed(unittest.TestCase):
+    """Roughly 40% of hospital files fail CMS's own validator, so a type
+    violation must degrade rather than take the audit down."""
+
+    def setUp(self):
+        from itemize import mrf
+        self.mrf = mrf
+
+    def _write(self, obj):
+        import json
+        import tempfile
+        p = os.path.join(tempfile.mkdtemp(), "mrf.json")
+        with open(p, "w") as f:
+            json.dump(obj, f)
+        return p
+
+    def test_non_string_description_does_not_crash(self):
+        p = self._write({"standard_charge_information": [
+            {"description": 123, "code_information": [{"code": "AAA"}],
+             "standard_charges": [{"gross_charge": 10, "discounted_cash": 5}]}]})
+        idx, scanned = self.mrf.index_for(p, ["AAA"])
+        self.assertEqual(scanned, 1)
+        self.assertAlmostEqual(idx["AAA"]["cash"], 5.0)
+
+    def test_wrong_shaped_collections_are_skipped(self):
+        p = self._write({"standard_charge_information": [
+            {"description": "x", "code_information": "notalist",
+             "standard_charges": "alsonotalist"},
+            {"description": "y", "code_information": [{"code": "BBB"}],
+             "standard_charges": [{"gross_charge": 7}]}]})
+        idx, scanned = self.mrf.index_for(p, ["AAA", "BBB"])
+        self.assertEqual(scanned, 2)
+        self.assertIn("BBB", idx)
+
+    def test_truncated_and_binary_files_are_survivable(self):
+        import tempfile
+        d = tempfile.mkdtemp()
+        for name, content in (("t.json", '{"standard_charge_information":[{"desc'),
+                              ("b.json", "\x00\x01\xff" * 50),
+                              ("e.json", "")):
+            p = os.path.join(d, name)
+            with open(p, "w", errors="ignore") as f:
+                f.write(content)
+            idx, _ = self.mrf.index_for(p, ["AAA"])
+            self.assertEqual(idx, {}, name)
