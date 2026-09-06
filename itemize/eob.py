@@ -30,7 +30,7 @@ EOB_ALIASES = {
     "date": ("date", "service date", "date of service", "dos"),
 }
 
-from .parse import RE_MONEY, _money_from  # noqa: E402
+from .parse import RE_MONEY, _denul, _money_from  # noqa: E402
 
 
 def _money(s):
@@ -71,7 +71,7 @@ def _map(header):
 
 def parse_eob(text):
     """Return [{code, date, billed, allowed, plan_paid, patient}]."""
-    text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = _denul((text or "").replace("\r\n", "\n").replace("\r", "\n"))
     try:
         dialect = csv.Sniffer().sniff(text[:4096], delimiters=",\t|;")
     except csv.Error:

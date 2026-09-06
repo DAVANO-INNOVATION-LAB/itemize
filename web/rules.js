@@ -319,6 +319,10 @@
   }
 
   function parseDelimited(text) {
+    // Mirrors _denul: Python's csv module raised on NUL up to 3.10, so both
+    // engines replace it with a SPACE before parsing. Dropping the byte instead
+    // would leave them reading "nulbyte" and "nul byte" for the same input.
+    text = text.replace(/\u0000/g, ' ');
     const first = (text.split('\n').find((l) => l.trim()) || '');
     if (!first) return [];
     const delim = [',', '\t', '|', ';']
@@ -458,7 +462,7 @@
   }
 
   function parseBill(text) {
-    text = text.replace(/\r\n?/g, '\n').replace(/^\ufeff/, '');
+    text = text.replace(/\r\n?/g, '\n').replace(/\u0000/g, ' ').replace(/^\ufeff/, '');
     const d = parseDelimited(text);
     return d.length ? d : parseText(text);
   }
@@ -475,7 +479,7 @@
   };
 
   function parseEob(text) {
-    text = (text || '').replace(/\r\n?/g, '\n');
+    text = (text || '').replace(/\r\n?/g, '\n').replace(/\u0000/g, ' ');
     const first = (text.split('\n').find((l) => l.trim()) || '');
     if (!first) return [];
     const delim = [',', '\t', '|', ';']

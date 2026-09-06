@@ -136,6 +136,23 @@ def _clean(text):
     return RE_CONTROL.sub(" ", str(text or "")).strip()
 
 
+def _denul(text):
+    """Replace NUL bytes with a space before anything else touches the text.
+
+    Python's csv module raised `_csv.Error: line contains NUL` up to 3.10, so a
+    bill carrying a NUL -- ordinary in text extracted from a PDF, and in some
+    Windows exports -- crashed the parser outright on the interpreter floor this
+    project claims to support. Sanitising per field was too late: the csv reader
+    chokes first.
+
+    A SPACE, not nothing: `_clean` turns the remaining control characters into
+    spaces too, and JavaScript has no NUL restriction, so dropping the byte here
+    would leave the two engines reading "nulbyte" and "nul byte" for the same
+    input.
+    """
+    return text.replace("\x00", " ")
+
+
 def _map_headers(header):
     out = {}
     for i, h in enumerate(header):
@@ -159,6 +176,7 @@ def _map_headers(header):
 
 
 def parse_delimited(text):
+    text = _denul(text)
     sample = text[:4096]
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",\t|;")
@@ -331,7 +349,7 @@ def parse_text(text):
 
 def parse(text):
     """Try delimited first, fall back to loose text. Returns [Line]."""
-    text = text.replace("\r\n", "\n").replace("\r", "\n").lstrip("\ufeff")
+    text = _denul(text.replace("\r\n", "\n").replace("\r", "\n")).lstrip("\ufeff")
     lines = parse_delimited(text)
     if len(lines) >= 1:
         return lines

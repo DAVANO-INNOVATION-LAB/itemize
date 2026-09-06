@@ -7,6 +7,14 @@ upgrades that had gone unattended.
 
 ### Fixed
 
+* **A NUL byte crashed the parser on Python 3.9 and 3.10.** `csv.reader` raised
+  `_csv.Error: line contains NUL` up to 3.10 and stopped doing so in 3.11, so a
+  bill carrying a NUL — ordinary in text extracted from a PDF, and in some
+  Windows exports — crashed outright on the interpreter floor this project
+  claims to support, while passing on a newer one. Sanitising per field was too
+  late; the csv reader chokes before any field is seen. Found by the new CI
+  matrix on its first run, which is the whole reason for testing the floor
+  rather than asserting it.
 * **A published price could be attached to the wrong setting.** `itemize/mrf.py`
   folded every `standard_charges` entry of a record into one row, taking the last
   non-null value of each field while keeping the *first* setting label. A knee

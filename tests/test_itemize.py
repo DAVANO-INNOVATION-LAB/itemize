@@ -1058,3 +1058,38 @@ class TestMrfMalformed(unittest.TestCase):
                 f.write(content)
             idx, _ = self.mrf.index_for(p, ["AAA"])
             self.assertEqual(idx, {}, name)
+
+
+class TestNulBytes(unittest.TestCase):
+    """Python's csv module raised `_csv.Error: line contains NUL` up to 3.10.
+
+    A bill carrying a NUL -- ordinary in text extracted from a PDF, and in some
+    Windows exports -- therefore crashed the parser outright on the interpreter
+    floor this project claims to support, while passing on 3.11+. Sanitising per
+    field was too late: the csv reader chokes before any field is seen.
+    """
+
+    def test_nul_in_a_bill_does_not_raise(self):
+        lines = parse("Date,Code,Description,Qty,Charges\n"
+                      "2026-03-14,J1885,nul\x00byte,1,10.00\n")
+        self.assertEqual(len(lines), 1)
+        self.assertAlmostEqual(lines[0].charge, 10.00)
+
+    def test_nul_in_an_eob_does_not_raise(self):
+        from itemize.eob import parse_eob
+        rows = parse_eob("Code,Allowed,Patient Responsibility\n"
+                         "J1885,42.00\x00,5.00\n")
+        self.assertEqual(len(rows), 1)
+
+    def test_nul_becomes_a_space_not_nothing(self):
+        """JavaScript has no NUL restriction, so dropping the byte here would
+        leave the two engines reading 'nulbyte' and 'nul byte' for one input."""
+        lines = parse("Date,Code,Description,Qty,Charges\n"
+                      "2026-03-14,J1885,nul\x00byte,1,10.00\n")
+        self.assertEqual(lines[0].desc, "nul byte")
+
+    def test_nul_heavy_input_still_parses_the_charge(self):
+        lines = parse("Date,Code,Description,Qty,Charges\n"
+                      "\x002026-03-14\x00,\x00J1885\x00,\x00TRAY\x00,\x001\x00,\x0010.00\x00\n")
+        self.assertEqual(len(lines), 1)
+        self.assertAlmostEqual(lines[0].charge, 10.00)
