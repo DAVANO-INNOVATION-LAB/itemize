@@ -1318,6 +1318,28 @@ Fewer than one per cent of denied claims are appealed. I am appealing this one.
     }
 
     const cc = entry.charity_care || {};
+
+    // A SOURCED NEGATIVE is not a gap, and not "you have no rights" either. Most
+    // states set no minimum standards of their own -- but federal 501(r) still
+    // binds every tax-exempt hospital, and that is what a reader here needs told,
+    // because otherwise silence reads as "nothing to ask for".
+    // Mirrors itemize/states.py.
+    if (cc.state_minimum_standards === false) {
+      out.push(F({
+        rule: 'state_no_assistance_standard', severity: 'info',
+        title: `${entry.name} sets no financial-assistance standards of its own — the federal floor still applies`,
+        detail: 'Most states do not set minimum standards for hospital financial assistance, and '
+          + 'this is one of them. That is a researched finding, not a gap in our data — and it '
+          + 'does **not** mean there is nothing to ask for. Federal law (IRC 501(r)) requires '
+          + 'every tax-exempt hospital to have a written financial assistance policy, to '
+          + 'publicise it, and to limit what it charges patients who qualify. Ask this hospital '
+          + 'for its policy by name and apply in writing. ' + (cc.note || '')
+          + ' State legislatures move quickly on this; if the reading below is old, check with '
+          + 'your state department of insurance before treating it as current.',
+        lines: [], citation: cite,
+      }));
+    }
+
     if (cc.applies_to === 'all') {
       out.push(F({
         rule: 'state_charity_all_hospitals', severity: 'high',

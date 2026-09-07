@@ -1139,20 +1139,54 @@ class TestStateCoverage(unittest.TestCase):
             self.assertIn(type(e.get("charity_care")), (dict, type(None)), code)
             self.assertIn(type(e.get("state_program")), (dict, type(None)), code)
 
-    def test_partially_researched_state_says_so(self):
+    def test_unresearched_charity_care_still_says_so(self):
+        """No shipped state has a null charity_care any more, but the guard has to
+        stay: the next entry someone adds from a partial source must not deliver
+        its silence as "there is no such law here"."""
+        import tempfile
+        import json
+        from itemize import states as states_mod
+        tmp = tempfile.mkdtemp()
+        payload = json.loads(json.dumps(self.data))
+        payload["states"]["ZZ"] = {
+            "name": "Partialia", "ambulance_balance_billing": True,
+            "ambulance_note": "x", "charity_care": None, "state_program": None,
+            "citations": ["http://example/z"],
+            "verified": datetime.date.today().isoformat()}
+        with open(os.path.join(tmp, "states.json"), "w") as f:
+            json.dump(payload, f)
+        found = states_mod.evaluate([Line(idx=1, charge=100.0)], FakeRef(),
+                                    Context(state="ZZ"), tmp)
+        self.assertIn("state_assistance_not_researched", {x.rule for x in found})
+
+    def test_sourced_negative_is_distinct_from_unresearched(self):
+        """`state_minimum_standards: false` says we looked and there is none;
+        null says we did not look. They must not produce the same finding."""
         import tempfile
         import json
         from itemize import states as states_mod
         tmp = tempfile.mkdtemp()
         with open(os.path.join(tmp, "states.json"), "w") as f:
             json.dump(self.data, f)
-        partial = next(k for k, e in self.states.items()
-                       if e.get("charity_care") is None)
+        neg = next(k for k, e in self.states.items()
+                   if (e.get("charity_care") or {}).get(
+                       "state_minimum_standards") is False)
         found = states_mod.evaluate([Line(idx=1, charge=100.0)], FakeRef(),
-                                    Context(state=partial), tmp)
-        rules_fired = {x.rule for x in found}
-        self.assertIn("state_assistance_not_researched", rules_fired, partial)
-        self.assertNotIn("state_not_researched", rules_fired)
+                                    Context(state=neg), tmp)
+        fired = {x.rule for x in found}
+        self.assertIn("state_no_assistance_standard", fired, neg)
+        self.assertNotIn("state_assistance_not_researched", fired)
+        text = next(x for x in found if x.rule == "state_no_assistance_standard").detail
+        # The whole point: a negative must not read as "nothing to ask for".
+        self.assertIn("501(r)", text)
+        self.assertIn("not** mean there is nothing to ask for", text)
+
+    def test_financial_assistance_recorded_for_every_jurisdiction(self):
+        nulls = [k for k, e in self.states.items() if e.get("charity_care") is None]
+        self.assertEqual(nulls, [])
+        std = sum(1 for e in self.states.values()
+                  if (e.get("charity_care") or {}).get("state_minimum_standards"))
+        self.assertEqual(std, 4, "4 of the newly added states set minimum standards")
 
     def test_fully_researched_state_does_not_get_the_partial_notice(self):
         import tempfile

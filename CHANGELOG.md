@@ -1,6 +1,24 @@
 # Changelog
 
-## 0.4.0 — unreleased
+## 0.5.0 — unreleased
+
+### Financial-assistance law for all 51 jurisdictions
+
+Hospital financial-assistance law is now recorded for every US jurisdiction, from
+the Commonwealth Fund / Georgetown CHIR medical-debt map (research current 12
+June 2025). 21 set minimum standards, 30 do not. Four of the newly researched
+states have standards worth knowing: **North Carolina** (free care to 200% FPL,
+sliding discounts to 300%, and presumptive eligibility so you may not need to
+apply), **Oklahoma**, the **District of Columbia**, and **Georgia** — which is
+also one of the few states giving patients a right to appeal a denial.
+
+**A sourced negative is now a distinct state of knowledge.** `null` means nobody
+looked; `state_minimum_standards: false` means we looked and there is none. The
+second produces a new finding rather than silence, because a reader in one of
+those 30 states still needs telling that federal 501(r) binds every tax-exempt
+hospital regardless. Silence would have read as "nothing to ask for".
+
+## 0.4.0
 
 ### State law: 24 entries to 51
 

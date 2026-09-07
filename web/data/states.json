@@ -5,7 +5,8 @@
     "known_gaps": [
       "Ground-ambulance protections are now recorded for all 51 jurisdictions from the Commonwealth Fund / Georgetown CHIR map, updated February 2026. Its map data names 22 states with protections; the surrounding prose on the same page says 24, and that discrepancy is unresolved -- the 22 the data actually names are what is recorded here. Every one of these laws reaches fully insured plans only.",
       "Several of these statutes SUNSET: Texas 1 Sep 2027, Utah 1 Jul 2027, Mississippi 30 Jun 2028, and Washington's 325%-of-Medicare fallback 31 Dec 2027. Illinois expands to private state-regulated plans on 1 Jan 2027. Re-verify before those dates.",
-      "Charity-care thresholds, state assistance programmes and surprise-billing laws are recorded only for the 24 states researched in the original pass. The 27 states added from the ambulance map carry null for those fields, which means NOT RESEARCHED.",
+      "Hospital financial-assistance law is now recorded for all 51 jurisdictions from the Commonwealth Fund / Georgetown CHIR medical-debt map, research current 12 June 2025: 21 set minimum standards, 30 do not. A recorded 'no standard' is a SOURCED NEGATIVE, not a gap \u2014 charity_care is null only where nothing has been researched. Note the source is over a year old and states legislate in this area often; re-verify before relying on a negative.",
+      "State-run assistance PROGRAMMES (Massachusetts' Health Safety Net and the like) are researched only for the original 24 states. state_program is null elsewhere, which means not researched.",
       "Statutes of limitations, medical-debt credit-reporting rules and wage-garnishment limits remain largely unmodelled: debt_sol_years is set for one state."
     ],
     "note": "HAND-CURATED. Unlike the other files in this directory, this one is NOT produced by tools/build_data.py from a federal source. Every entry is researched by hand and must carry citations and a `verified` date. Absence of a state means NOT RESEARCHED -- which is never the same as 'no protection'. Do not fill a field with false to make a map look complete.",
@@ -17,9 +18,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Alaska",
       "state_program": null,
@@ -30,9 +37,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Alabama",
       "state_program": null,
@@ -43,9 +56,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": true,
       "ambulance_note": "Public and private services; all private state-regulated plans. Pays a locally set rate, else the lesser of 325% of Medicare or billed charges. Non-emergency transport included.",
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Arkansas",
       "state_program": null,
@@ -56,9 +75,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Arizona",
       "state_program": null,
@@ -128,9 +153,17 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "appeal_right": false,
+        "applies_to": "all",
+        "free_care_fpl": 200,
+        "note": "The District requires both for-profit and nonprofit hospitals to provide financial assistance as a condition of holding a certificate of need, and hospitals must provide uncompensated care worth at least 3% of operating costs. Uninsured AND underinsured patients up to 200% FPL are eligible for free care. There is no right to appeal a denial. (Source research current as of 12 June 2025.)",
+        "state_minimum_standards": true
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "District of Columbia",
       "state_program": null,
@@ -177,9 +210,18 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "appeal_right": true,
+        "applies_to": "conditional",
+        "discount_fpl": 200,
+        "free_care_fpl": 125,
+        "note": "Georgia's requirement is conditional, not universal: it binds hospitals designated as disproportionate share hospitals as a condition of state uncompensated-care funding, plus destination cancer hospitals seeking a certificate of need. Where it applies, patients up to 125% FPL are eligible for free care and 125-200% FPL for free or discounted care. Georgia does give patients a right to appeal a denial, which most states do not. (Source research current as of 12 June 2025.)",
+        "state_minimum_standards": true
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Georgia",
       "state_program": null,
@@ -190,9 +232,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Hawaii",
       "state_program": null,
@@ -203,9 +251,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Iowa",
       "state_program": null,
@@ -216,9 +270,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Idaho",
       "state_program": null,
@@ -248,9 +308,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": true,
       "ambulance_note": "Public and private services; all private state-regulated plans. Pays the least of a local rate, 400% of Medicare, or billed charges. Non-emergency transport included.",
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Indiana",
       "state_program": null,
@@ -261,9 +327,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Kansas",
       "state_program": null,
@@ -274,9 +346,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Kentucky",
       "state_program": null,
@@ -287,9 +365,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": true,
       "ambulance_note": "Public and private services; all private state-regulated plans. Pays a locally set rate, else the lesser of 325% of Medicare or billed charges. Non-emergency transport NOT included.",
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Louisiana",
       "state_program": null,
@@ -361,9 +445,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Michigan",
       "state_program": null,
@@ -391,9 +481,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Missouri",
       "state_program": null,
@@ -404,9 +500,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": true,
       "ambulance_note": "Public and private services; all private state-regulated plans. Pays a locally set rate, else the greater of 325% of Medicare or billed charges. Non-emergency transport included. THE LAW EXPIRES 30 JUNE 2028.",
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Mississippi",
       "state_program": null,
@@ -417,9 +519,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Montana",
       "state_program": null,
@@ -430,9 +538,18 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "appeal_right": false,
+        "applies_to": "all",
+        "discount_fpl": 300,
+        "free_care_fpl": 200,
+        "note": "North Carolina requires both for-profit and nonprofit hospitals to provide financial assistance as a condition of enhanced Medicaid reimbursement under HASP. Uninsured and underinsured patients up to 200% FPL get free care; 200-250% FPL a discount of at least 75%; 250-300% FPL at least 50%. Hospitals must apply presumptive eligibility up to 300% FPL using factors such as homelessness or enrolment in other means-tested programmes, so you may not need to apply at all. There is no right to appeal. (Source research current as of 12 June 2025.)",
+        "state_minimum_standards": true
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "North Carolina",
       "state_program": null,
@@ -461,9 +578,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Nebraska",
       "state_program": null,
@@ -509,9 +632,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "New Mexico",
       "state_program": null,
@@ -576,9 +705,18 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": true,
       "ambulance_note": "Public and private services; all private state-regulated plans. Minimum reimbursement is a locally set rate, else the lesser of 325% of Medicare or billed charges. Non-emergency transport included.",
-      "charity_care": null,
+      "charity_care": {
+        "appeal_right": false,
+        "applies_to": "all",
+        "discount_fpl": 300,
+        "free_care_fpl": 100,
+        "note": "Oklahoma requires both for-profit and nonprofit hospitals to provide financial assistance as a condition of receiving state uncompensated-care funding. Patients under 100% FPL who are uninsured qualify as indigent, as do patients whose medical expenses exceed 50% of gross income. Patients under 300% FPL who are ineligible for insurance cannot be charged more than the greater of Medicare rates or cost-to-charge ratio times billed charges. Undocumented immigrants are excluded except for emergency services, and there is no right to appeal. (Source research current as of 12 June 2025.)",
+        "state_minimum_standards": true
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Oklahoma",
       "state_program": null,
@@ -607,9 +745,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Pennsylvania",
       "state_program": null,
@@ -656,9 +800,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "South Dakota",
       "state_program": null,
@@ -669,9 +819,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Tennessee",
       "state_program": null,
@@ -718,9 +874,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Virginia",
       "state_program": null,
@@ -768,9 +930,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Wisconsin",
       "state_program": null,
@@ -799,9 +967,15 @@
       "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
       "ambulance_note": null,
-      "charity_care": null,
+      "charity_care": {
+        "applies_to": null,
+        "note": "No state minimum standards for hospital financial assistance policies (source research current as of 12 June 2025). This is a researched finding, not a gap in our data \u2014 but it is also not the same as having no rights.",
+        "state_minimum_standards": false
+      },
       "citations": [
-        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/state-protections-against-medical-debt",
+        "https://www.commonwealthfund.org/publications/fund-reports/2025/jul/state-protections-against-medical-debt-look-policies-across-us"
       ],
       "name": "Wyoming",
       "state_program": null,

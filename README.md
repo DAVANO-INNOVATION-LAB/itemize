@@ -112,11 +112,25 @@ where the statute sunsets, when: **Texas 1 Sep 2027, Utah 1 Jul 2027, Mississipp
 30 Jun 2028**, and Washington's 325%-of-Medicare fallback 31 Dec 2027. Illinois
 expands to private state-regulated plans on 1 Jan 2027.
 
-Charity-care and state-assistance law is researched for **24** of them. The other
-27 carry `null` there, and a reader in one of those states is told *specifically*
-that this aspect is unresearched — because once every state had an entry,
-"has an entry" stopped meaning "researched", and silence would have read as
-"no such law here".
+**Hospital financial-assistance law is also recorded for all 51**, from the
+Commonwealth Fund / Georgetown CHIR medical-debt map (research current 12 June
+2025). 21 jurisdictions set minimum standards of their own; 30 do not.
+
+That second number is the interesting one. "No state standard" is recorded as a
+**sourced negative** — we looked, and there is none — which is a different thing
+from `null`, meaning nobody looked. It also is not the same as "you have no
+rights": federal 501(r) still binds every tax-exempt hospital, so a reader in one
+of those 30 is told exactly that, rather than being handed silence. Three states
+of knowledge, kept distinct:
+
+| `charity_care` | means | what the reader is told |
+|---|---|---|
+| `null` | not researched | "we don't know, and we'd rather say so" |
+| `state_minimum_standards: false` | researched, none | "no state standard — but ask anyway, 501(r) still applies" |
+| thresholds recorded | researched, standards | the actual FPL thresholds and who they bind |
+
+State-run assistance *programmes* (Massachusetts' Health Safety Net and the like)
+are still researched only for the original 24.
 
 ### Coverage context changes what you are shown
 
@@ -419,15 +433,14 @@ Useful directions, roughly in order of value:
    exactly the confident-but-wrong failure this project is built to avoid. The
    strings are centralised enough to extract; the translation needs a human who
    knows the domain.
-3. **Charity-care and assistance law for the 27 states that lack it** in
-   `web/data/states.json`. Ground ambulance is complete; this is the remaining
-   gap, and it is the field that most often decides whether a reader's whole
-   balance can be written off. Follow the rules in the file's `_meta` block:
-   citations and a `verified` date on every entry, and `null` rather than a
-   guess — `false` asserts that no such law exists, which is a different claim.
-   Re-verifying an existing entry is as valuable as adding a new one, and
-   `tests/test_itemize.py` fails the build once any entry passes
-   `stale_after_days`.
+3. **State-run assistance programmes** in `web/data/states.json`, researched for
+   24 of 51. Ground-ambulance and financial-assistance law are complete; this is
+   what is left. **Re-verifying is now as valuable as adding**: the medical-debt
+   source is research current to June 2025, states legislate here constantly, and
+   a stale *negative* understates someone's rights. Follow the file's `_meta`
+   rules — citations and a `verified` date on every entry, and `null` rather than
+   a guess, because `false` asserts that no such law exists, which is a different
+   claim. `tests/test_itemize.py` fails the build once any entry goes stale.
 4. **A 501(c)(3) lookup** so the charity-care finding fires automatically instead
    of asking the reader whether their hospital is non-profit.
 5. **MUE units caps** (AMA-gated, so tier 2) — there is still no units-of-service

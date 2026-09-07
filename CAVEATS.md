@@ -155,10 +155,18 @@ to be wrong or out of date.
 * **Several of these statutes sunset**: Texas 1 Sep 2027, Utah 1 Jul 2027,
   Mississippi 30 Jun 2028, and Washington's 325%-of-Medicare fallback
   31 Dec 2027. An entry that outlives its statute is worse than no entry.
-* **Charity-care and assistance law is researched for 24 of the 51.** The rest
-  carry `null`, and the tool says specifically that *that aspect* is
-  unresearched rather than going quiet — once every state had an entry, having
-  one stopped meaning "researched".
+* **Hospital financial-assistance law is recorded for all 51** (Commonwealth
+  Fund / Georgetown CHIR, research current 12 June 2025): 21 set minimum
+  standards, 30 do not. A recorded "no standard" is a **sourced negative** — we
+  looked — which is distinct from `null`, meaning nobody looked, and distinct
+  again from "you have no rights", since federal 501(r) still binds every
+  tax-exempt hospital.
+* **That negative is the most perishable claim in this file.** It is over a year
+  old, states legislate in this area constantly, and a stale negative
+  *understates* someone's rights — the one direction of error this project tries
+  hardest to avoid. Check with your state department of insurance before relying
+  on it.
+* **State-run assistance programmes are researched for 24 of the 51.**
 * **Every one of these ambulance laws reaches fully insured plans only.** If
   your plan is self-funded, none of them apply to you.
 * Many recorded fields are `null` because a source did not name them. `null`

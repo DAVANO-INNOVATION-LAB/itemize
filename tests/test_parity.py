@@ -437,16 +437,27 @@ class TestParity(unittest.TestCase):
         self.assertIn("state_ambulance_unprotected", rules)
         self.assertIn("state_debt_sol", rules)
 
-    def test_partially_researched_state_says_which_part_is_unknown(self):
-        """Every jurisdiction now has an entry, so "no entry" no longer carries the
-        uncertainty. A state whose charity-care law is unresearched must still say
-        so -- silence there would read as "no such law here"."""
+    def test_sourced_negative_still_points_at_the_federal_floor(self):
+        """Most states set no assistance standards of their own. That is a
+        researched finding, and it must not be delivered as silence -- federal
+        501(r) still binds every tax-exempt hospital."""
         lines = [Line(idx=1, code="J1885", units=1, charge=180.0, date="d")]
         ctx = Context(insured=False, state="WY")
-        got = self.assertParity(lines, ctx, label="partially researched state")
+        got = self.assertParity(lines, ctx, label="sourced negative")
         rules = {g["rule"] for g in got}
-        self.assertIn("state_assistance_not_researched", rules)
+        self.assertIn("state_no_assistance_standard", rules)
         self.assertNotIn("state_not_researched", rules)
+        self.assertNotIn("state_assistance_not_researched", rules)
+
+    def test_states_with_standards_agree(self):
+        lines = [Line(idx=1, code="J1885", units=1, charge=180.0, date="d")]
+        for code, expect in (("NC", "state_charity_all_hospitals"),
+                             ("OK", "state_charity_all_hospitals"),
+                             ("GA", "state_charity_threshold"),
+                             ("DC", "state_charity_all_hospitals")):
+            got = self.assertParity(lines, Context(insured=False, state=code),
+                                    label=f"{code} assistance standards")
+            self.assertIn(expect, {g["rule"] for g in got}, code)
 
     def test_unknown_state_code_still_says_not_researched(self):
         lines = [Line(idx=1, code="J1885", units=1, charge=180.0, date="d")]

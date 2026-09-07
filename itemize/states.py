@@ -181,6 +181,32 @@ def evaluate(lines, ref, ctx, data_dir=None):
             lines=[], citation=_cites(entry) + _stale_suffix(sd, entry)))
 
     cc = entry.get("charity_care") or {}
+
+    # A SOURCED NEGATIVE is not a gap, and it is not "you have no rights" either.
+    # Most states set no minimum standards of their own -- but federal 501(r)
+    # still binds every tax-exempt hospital, and that is the thing a reader in
+    # one of these states needs told, because otherwise silence here reads as
+    # "nothing to ask for".
+    if cc.get("state_minimum_standards") is False:
+        out.append(Finding(
+            rule="state_no_assistance_standard",
+            severity="info",
+            title=(f"{entry['name']} sets no financial-assistance standards of its "
+                   "own — the federal floor still applies"),
+            detail=("Most states do not set minimum standards for hospital financial "
+                    "assistance, and this is one of them. That is a researched "
+                    "finding, not a gap in our data — and it does **not** mean there "
+                    "is nothing to ask for. Federal law (IRC 501(r)) requires every "
+                    "tax-exempt hospital to have a written financial assistance "
+                    "policy, to publicise it, and to limit what it charges patients "
+                    "who qualify. Ask this hospital for its policy by name and apply "
+                    "in writing. "
+                    + (cc.get("note") or "")
+                    + " State legislatures move quickly on this; if the reading "
+                      "below is old, check with your state department of insurance "
+                      "before treating it as current."),
+            lines=[], citation=_cites(entry) + _stale_suffix(sd, entry)))
+
     if cc.get("applies_to") == "all":
         out.append(Finding(
             rule="state_charity_all_hospitals",

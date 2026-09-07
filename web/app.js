@@ -60,27 +60,27 @@ const STATE_NAMES = {
 };
 
 function buildStateOptions(states) {
-  // Grouped by HOW MUCH is known, not by whether an entry exists. Every
-  // jurisdiction now has one, so "has an entry" stopped meaning "researched":
-  // 27 of them carry ground-ambulance law only. Labelling those as researched
-  // would let a reader read silence on financial assistance as "none here".
+  // A flat list, deliberately. This was grouped by how much had been researched
+  // back when coverage was partial; every jurisdiction now has both ground
+  // ambulance and hospital financial-assistance law recorded, so a "researched"
+  // group would contain all of them and tell the reader nothing. What is still
+  // uneven — state-run assistance programmes — is disclosed in the findings
+  // themselves, where it is attached to the state it applies to.
   const all = (states && states.states) || {};
   const sel = $('#state');
-  const full = [], partial = [], none = [];
-  Object.keys(STATE_NAMES).sort((a, b) => STATE_NAMES[a].localeCompare(STATE_NAMES[b]))
-    .forEach((c) => {
-      const e = all[c];
-      if (!e) none.push(c);
-      else if (e.charity_care == null && e.state_program == null) partial.push(c);
-      else full.push(c);
-    });
+  const codes = Object.keys(STATE_NAMES)
+    .filter((c) => all[c])
+    .sort((a, b) => STATE_NAMES[a].localeCompare(STATE_NAMES[b]));
+  const missing = Object.keys(STATE_NAMES)
+    .filter((c) => !all[c])
+    .sort((a, b) => STATE_NAMES[a].localeCompare(STATE_NAMES[b]));
   const opt = (c) => `<option value="${c}">${esc(STATE_NAMES[c])}</option>`;
-  const grp = (label, codes) => (codes.length
-    ? `<optgroup label="${esc(label)}">${codes.map(opt).join('')}</optgroup>` : '');
   sel.innerHTML = '<option value="">Rather not say</option>'
-    + grp('Researched — ambulance, charity care and assistance', full)
-    + grp('Ambulance law researched; assistance law not yet', partial)
-    + grp('Not yet researched — we will say so rather than guess', none);
+    + codes.map(opt).join('')
+    + (missing.length
+      ? `<optgroup label="Not yet researched — we will say so rather than guess">${
+        missing.map(opt).join('')}</optgroup>`
+      : '');
 }
 
 /* --------------------------------------------------------- parse stats */
@@ -590,8 +590,8 @@ Promise.all(['hcpcs', 'asp', 'dmepos', 'nadac', 'drg', 'states', 'manifest'].map
 
   const allStates = (states && states.states) || {};
   const sc = Object.keys(allStates).length;
-  const scFull = Object.values(allStates).filter(
-    (e) => e.charity_care != null || e.state_program != null).length;
+  const scStd = Object.values(allStates).filter(
+    (e) => (e.charity_care || {}).state_minimum_standards).length;
   const n = Object.keys(ref.hcpcs).length;
   const priced = new Set([...Object.keys(ref.asp), ...Object.keys(ref.dmepos)]).size;
   const nd = Object.keys(ref.nadac).length;
@@ -602,8 +602,9 @@ Promise.all(['hcpcs', 'asp', 'dmepos', 'nadac', 'drg', 'states', 'manifest'].map
       + (nd ? `, ${nd.toLocaleString()} drug acquisition costs by NDC` : '')
       + (dr ? `, and ${dr.toLocaleString()} national MS-DRG averages` : '')
       + `, built ${ref.manifest.built || 'unknown'}. `
-      + `Ground-ambulance law verified for ${sc} jurisdictions, of which ${scFull} also have `
-      + `charity-care and assistance law researched — the rest say so rather than guessing.`
+      + `Ground-ambulance and hospital financial-assistance law verified for ${sc} `
+      + `jurisdictions; ${scStd} of them set their own assistance standards, and the rest `
+      + `are recorded as researched-and-none rather than left blank.`
     : 'Reference data not found — run tools/build_data.py. Structural checks still work.';
 
   if ($('#bill').value.trim()) runAudit();
