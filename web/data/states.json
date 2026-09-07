@@ -1,168 +1,812 @@
 {
   "_meta": {
-    "schema_version": 1,
-    "stale_after_days": 365,
-    "built": "2026-08-05",
-    "note": "HAND-CURATED. Unlike the other files in this directory, this one is NOT produced by tools/build_data.py from a federal source. Every entry is researched by hand and must carry citations and a `verified` date. Absence of a state means NOT RESEARCHED -- which is never the same as 'no protection'. Do not fill a field with false to make a map look complete.",
+    "applies_only_to_state_regulated_plans": "State insurance law generally does not reach self-funded (ERISA) employer plans, which cover roughly two-thirds of workers with employer coverage. Every state protection below is gated on the reader's plan being fully insured.",
+    "built": "2026-09-07",
     "known_gaps": [
-      "As of February 2026, 22 states are reported to have ground-ambulance balance-billing protections. 16 are identified by name below. The remaining ~6 are unidentified here and are deliberately left null rather than guessed.",
-      "Charity-care thresholds are recorded only where a source names them. Many states have requirements not captured here.",
-      "Statutes of limitations, medical-debt credit-reporting rules and wage-garnishment limits are largely unmodelled."
+      "Ground-ambulance protections are now recorded for all 51 jurisdictions from the Commonwealth Fund / Georgetown CHIR map, updated February 2026. Its map data names 22 states with protections; the surrounding prose on the same page says 24, and that discrepancy is unresolved -- the 22 the data actually names are what is recorded here. Every one of these laws reaches fully insured plans only.",
+      "Several of these statutes SUNSET: Texas 1 Sep 2027, Utah 1 Jul 2027, Mississippi 30 Jun 2028, and Washington's 325%-of-Medicare fallback 31 Dec 2027. Illinois expands to private state-regulated plans on 1 Jan 2027. Re-verify before those dates.",
+      "Charity-care thresholds, state assistance programmes and surprise-billing laws are recorded only for the 24 states researched in the original pass. The 27 states added from the ambulance map carry null for those fields, which means NOT RESEARCHED.",
+      "Statutes of limitations, medical-debt credit-reporting rules and wage-garnishment limits remain largely unmodelled: debt_sol_years is set for one state."
     ],
-    "applies_only_to_state_regulated_plans": "State insurance law generally does not reach self-funded (ERISA) employer plans, which cover roughly two-thirds of workers with employer coverage. Every state protection below is gated on the reader's plan being fully insured."
+    "note": "HAND-CURATED. Unlike the other files in this directory, this one is NOT produced by tools/build_data.py from a federal source. Every entry is researched by hand and must carry citations and a `verified` date. Absence of a state means NOT RESEARCHED -- which is never the same as 'no protection'. Do not fill a field with false to make a map look complete.",
+    "schema_version": 1,
+    "stale_after_days": 365
   },
   "states": {
+    "AK": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Alaska",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "AL": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Alabama",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "AR": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. Pays a locally set rate, else the lesser of 325% of Medicare or billed charges. Non-emergency transport included.",
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Arkansas",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "AZ": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Arizona",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "CA": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. Pays a locally approved rate, else a reasonable-and-customary value set under state regulation. Non-emergency transport included.",
+      "charity_care": {
+        "applies_to": "all",
+        "discount_fpl": 400,
+        "free_care_fpl": 200,
+        "note": "Free care reported below 200% FPL and discounts up to 400% FPL, applying to all hospitals and reported to apply regardless of immigration status or residency."
+      },
+      "citations": [
+        "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "California",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "CO": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "PRIVATE services only; all private state-regulated plans. Pays 325% of Medicare, or a negotiated rate where the provider contracts with a government entity. Non-emergency transport NOT included.",
+      "charity_care": {
+        "applies_to": null,
+        "free_care_fpl": null,
+        "note": "State-run financial assistance programme reported; details not captured here."
+      },
+      "citations": [
+        "https://leg.colorado.gov/bills/hb24-1218",
+        "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Colorado",
+      "state_program": {
+        "fpl_ceiling": null,
+        "name": "State financial assistance programme",
+        "note": "Reported to exist; thresholds not verified here."
+      },
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "CT": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "charity_care": {
+        "applies_to": "all",
+        "free_care_fpl": null,
+        "note": "Financial-assistance requirements reported to apply to all hospitals."
+      },
+      "citations": [
+        "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Connecticut",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "DC": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "District of Columbia",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "DE": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services except volunteer fire departments; all private state-regulated plans. Disputes go to arbitration; the insurer must pay the highest charge it allowed in the prior year meanwhile. Non-emergency transport NOT included.",
+      "charity_care": {
+        "applies_to": null,
+        "free_care_fpl": null,
+        "note": null
+      },
+      "citations": [
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Delaware",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "FL": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services, but HMO plans ONLY. Pays the lesser of billed charges, the usual and customary community charge, or a rate agreed within 60 days. Non-emergency transport NOT included.",
+      "charity_care": {
+        "applies_to": null,
+        "free_care_fpl": null,
+        "note": null
+      },
+      "citations": [
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Florida",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "GA": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Georgia",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "HI": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Hawaii",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "IA": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Iowa",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "ID": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Idaho",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "IL": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services, but HMO plans ONLY today: accepting the HMO payment bars the provider from billing the enrollee. Non-emergency transport NOT included. Expanded protections for private state-regulated plans, with a payment method and non-emergency coverage, take effect 1 January 2027.",
+      "charity_care": {
+        "applies_to": "all",
+        "free_care_fpl": null,
+        "note": "Financial-assistance requirements reported to apply to all hospitals."
+      },
+      "citations": [
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Illinois",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "IN": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. Pays the least of a local rate, 400% of Medicare, or billed charges. Non-emergency transport included.",
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Indiana",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "KS": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Kansas",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "KY": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Kentucky",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "LA": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. Pays a locally set rate, else the lesser of 325% of Medicare or billed charges. Non-emergency transport NOT included.",
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Louisiana",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
     "MA": {
-      "name": "Massachusetts",
-      "ambulance_balance_billing": null,
-      "surprise_billing_law": true,
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
       "charity_care": {
         "applies_to": "nonprofit",
         "free_care_fpl": 200,
         "note": "The Attorney General's Community Benefits Guidelines set expectations beyond federal 501(r), including free care at or below 200% FPL."
       },
-      "state_program": {
-        "name": "Health Safety Net",
-        "fpl_ceiling": 300,
-        "note": "State program that pays hospitals and community health centres directly for medically necessary care for eligible uninsured and underinsured residents."
-      },
-      "all_payer_rate_setting": false,
       "citations": [
         "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026",
-        "https://hilltopinstitute.org/wp-content/uploads/hcbp/hcbp_docs/HCBP_CBL_MA.pdf"
+        "https://hilltopinstitute.org/wp-content/uploads/hcbp/hcbp_docs/HCBP_CBL_MA.pdf",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
       ],
-      "verified": "2026-08-05"
+      "name": "Massachusetts",
+      "state_program": {
+        "fpl_ceiling": 300,
+        "name": "Health Safety Net",
+        "note": "State program that pays hospitals and community health centres directly for medically necessary care for eligible uninsured and underinsured residents."
+      },
+      "surprise_billing_law": true,
+      "verified": "2026-09-07"
+    },
+    "MD": {
+      "all_payer_note": "Maryland sets hospital rates on an all-payer basis, so comparing a charge to a Medicare rate behaves very differently here than elsewhere.",
+      "all_payer_rate_setting": true,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public services only where the provider accepts assignment of benefits from a PPO or EPO; public and private for HMOs. Minimum payment is the carrier's contracted rate for the same service in the same CMS region. Non-emergency transport included.",
+      "charity_care": {
+        "applies_to": "all",
+        "free_care_fpl": null,
+        "note": "Financial-assistance requirements reported to apply to all hospitals, not only tax-exempt ones."
+      },
+      "citations": [
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Maryland",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "ME": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. Pays the lesser of the provider's rate or 180% of Medicare, raised to match the Medicare rural add-on where the provider is in a CMS rural or super-rural area. Non-emergency transport included.",
+      "charity_care": {
+        "applies_to": "all",
+        "free_care_fpl": null,
+        "note": "Financial-assistance requirements reported to apply to all hospitals."
+      },
+      "citations": [
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Maine",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "MI": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Michigan",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "MN": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "charity_care": {
+        "applies_to": null,
+        "free_care_fpl": null,
+        "note": null
+      },
+      "citations": [
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Minnesota",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "MO": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Missouri",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "MS": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. Pays a locally set rate, else the greater of 325% of Medicare or billed charges. Non-emergency transport included. THE LAW EXPIRES 30 JUNE 2028.",
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Mississippi",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "MT": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Montana",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "NC": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "North Carolina",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "ND": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. Minimum reimbursement is the lesser of 250% of Medicare or billed charges. Non-emergency transport included.",
+      "charity_care": {
+        "applies_to": null,
+        "free_care_fpl": null,
+        "note": null
+      },
+      "citations": [
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "North Dakota",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "NE": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Nebraska",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "NH": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. For participating providers the rate is 325% of Medicare through 2027, then a statewide rate set by the commissioner from 2028; for non-participating providers the greater of the out-of-network rate or the Medicare rate, inflation-adjusted from 1 January 2029. Non-emergency transport included.",
+      "charity_care": {
+        "applies_to": null,
+        "free_care_fpl": null,
+        "note": null
+      },
+      "citations": [
+        "https://www.insurance.nh.gov/news-and-media/new-hampshire-insurance-department-applauds-landmark-legislation-ending-surprise",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "New Hampshire",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "NJ": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "charity_care": {
+        "applies_to": "all",
+        "free_care_fpl": null,
+        "note": "Financial-assistance requirements reported to apply to all hospitals."
+      },
+      "citations": [
+        "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "New Jersey",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "NM": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "New Mexico",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "NV": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "charity_care": {
+        "applies_to": "all",
+        "free_care_fpl": null,
+        "note": "Financial-assistance requirements reported to apply to all hospitals."
+      },
+      "citations": [
+        "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Nevada",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "NY": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. No set method: absent an agreed rate, the usual and customary rate, which may not be excessive or unreasonable. Non-emergency transport NOT included.",
+      "charity_care": {
+        "applies_to": "all",
+        "free_care_fpl": null,
+        "note": "Financial-assistance requirements reported to apply to all hospitals."
+      },
+      "citations": [
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "New York",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "OH": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. Pays the greatest of the in-network (median) rate, the plan's usual out-of-network basis, or the Medicare amount, with arbitration on disagreement. Non-emergency transport NOT included.",
+      "charity_care": {
+        "applies_to": null,
+        "free_care_fpl": null,
+        "note": null
+      },
+      "citations": [
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Ohio",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "OK": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. Minimum reimbursement is a locally set rate, else the lesser of 325% of Medicare or billed charges. Non-emergency transport included.",
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Oklahoma",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "OR": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. Pays the established local rate, else 325% of Medicare. Non-emergency transport included.",
+      "charity_care": {
+        "applies_to": null,
+        "free_care_fpl": null,
+        "note": null
+      },
+      "citations": [
+        "https://dfr.oregon.gov/business/reg/health/pages/ground-ambulance-rate-reporting.aspx",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Oregon",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "PA": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Pennsylvania",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "RI": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "charity_care": {
+        "applies_to": "all",
+        "free_care_fpl": null,
+        "note": "Financial-assistance requirements reported to apply to all hospitals."
+      },
+      "citations": [
+        "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Rhode Island",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
     },
     "SC": {
-      "name": "South Carolina",
+      "all_payer_rate_setting": false,
       "ambulance_balance_billing": false,
-      "surprise_billing_law": false,
       "charity_care": {
         "applies_to": null,
         "free_care_fpl": null,
         "note": "No comprehensive state mandate identified; assistance generally comes from an individual hospital's own policy under federal 501(r)."
       },
-      "state_program": null,
-      "all_payer_rate_setting": false,
-      "debt_sol_years": 3,
       "citations": [
         "https://doi.sc.gov/1001/No-Surprises-Act-Information",
-        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
       ],
-      "verified": "2026-08-05"
-    },
-    "MD": {
-      "name": "Maryland",
-      "ambulance_balance_billing": true,
-      "ambulance_note": "Reported to cover private ambulance services only.",
-      "surprise_billing_law": null,
-      "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals, not only tax-exempt ones." },
+      "debt_sol_years": 3,
+      "name": "South Carolina",
       "state_program": null,
-      "all_payer_rate_setting": true,
-      "all_payer_note": "Maryland sets hospital rates on an all-payer basis, so comparing a charge to a Medicare rate behaves very differently here than elsewhere.",
-      "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them", "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
-      "verified": "2026-08-05"
+      "surprise_billing_law": false,
+      "verified": "2026-09-07"
     },
-    "CA": {
-      "name": "California",
-      "ambulance_balance_billing": null,
-      "surprise_billing_law": null,
-      "charity_care": {
-        "applies_to": "all",
-        "free_care_fpl": 200,
-        "discount_fpl": 400,
-        "note": "Free care reported below 200% FPL and discounts up to 400% FPL, applying to all hospitals and reported to apply regardless of immigration status or residency."
-      },
+    "SD": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "South Dakota",
       "state_program": null,
-      "all_payer_rate_setting": false,
-      "citations": ["https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
-      "verified": "2026-08-05"
-    },
-    "WA": {
-      "name": "Washington",
-      "ambulance_balance_billing": true,
       "surprise_billing_law": null,
-      "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." },
+      "verified": "2026-09-07"
+    },
+    "TN": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Tennessee",
       "state_program": null,
-      "all_payer_rate_setting": false,
-      "citations": ["https://www.insurance.wa.gov/news/new-billing-protections-ground-ambulance-patients-take-effect", "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
-      "verified": "2026-08-05"
-    },
-    "NY": {
-      "name": "New York",
-      "ambulance_balance_billing": true,
       "surprise_billing_law": null,
-      "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." },
-      "state_program": null,
-      "all_payer_rate_setting": false,
-      "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them", "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
-      "verified": "2026-08-05"
-    },
-    "IL": {
-      "name": "Illinois",
-      "ambulance_balance_billing": true,
-      "surprise_billing_law": null,
-      "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." },
-      "state_program": null,
-      "all_payer_rate_setting": false,
-      "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them", "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
-      "verified": "2026-08-05"
-    },
-    "ME": {
-      "name": "Maine",
-      "ambulance_balance_billing": true,
-      "surprise_billing_law": null,
-      "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." },
-      "state_program": null,
-      "all_payer_rate_setting": false,
-      "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them", "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
-      "verified": "2026-08-05"
-    },
-    "CO": {
-      "name": "Colorado",
-      "ambulance_balance_billing": true,
-      "ambulance_note": "Reported to cover private ambulance services only.",
-      "surprise_billing_law": null,
-      "charity_care": { "applies_to": null, "free_care_fpl": null, "note": "State-run financial assistance programme reported; details not captured here." },
-      "state_program": { "name": "State financial assistance programme", "fpl_ceiling": null, "note": "Reported to exist; thresholds not verified here." },
-      "all_payer_rate_setting": false,
-      "citations": ["https://leg.colorado.gov/bills/hb24-1218", "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"],
-      "verified": "2026-08-05"
+      "verified": "2026-09-07"
     },
     "TX": {
-      "name": "Texas",
-      "ambulance_balance_billing": true,
-      "ambulance_note": "Protections were due to expire in September 2025; the sunset date was extended to 1 September 2027. Re-verify before relying on this.",
-      "surprise_billing_law": null,
-      "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null },
-      "state_program": null,
       "all_payer_rate_setting": false,
-      "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"],
-      "verified": "2026-08-05"
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. Pays a rate set by a political subdivision and filed with the state, else the lesser of 325% of Medicare or billed charges. Non-emergency transport NOT included. THE LAW EXPIRES 1 SEPTEMBER 2027.",
+      "charity_care": {
+        "applies_to": null,
+        "free_care_fpl": null,
+        "note": null
+      },
+      "citations": [
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Texas",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "UT": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. Pays a base rate by provider type, with a just-and-reasonable mileage rate set by the insurance bureau. Non-emergency transport included. THE LAW EXPIRES 1 JULY 2027.",
+      "charity_care": {
+        "applies_to": null,
+        "free_care_fpl": null,
+        "note": null
+      },
+      "citations": [
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Utah",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "VA": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Virginia",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "VT": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. No state payment method is specified. Non-emergency transport NOT included.",
+      "charity_care": {
+        "applies_to": null,
+        "free_care_fpl": null,
+        "note": null
+      },
+      "citations": [
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Vermont",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "WA": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services; all private state-regulated plans. Pays a locally set rate for public organisations or a contracted rate for private ones, else the lesser of 325% of Medicare or billed charges \u2014 that fallback expires 31 December 2027. Non-emergency transport included.",
+      "charity_care": {
+        "applies_to": "all",
+        "free_care_fpl": null,
+        "note": "Financial-assistance requirements reported to apply to all hospitals."
+      },
+      "citations": [
+        "https://www.insurance.wa.gov/news/new-billing-protections-ground-ambulance-patients-take-effect",
+        "https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Washington",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    },
+    "WI": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Wisconsin",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
     },
     "WV": {
-      "name": "West Virginia",
-      "ambulance_balance_billing": true,
-      "ambulance_note": "Current protections reported to apply only to HMOs, with broader protections taking effect in 2027.",
-      "surprise_billing_law": null,
-      "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null },
-      "state_program": null,
       "all_payer_rate_setting": false,
-      "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"],
-      "verified": "2026-08-05"
+      "ambulance_balance_billing": true,
+      "ambulance_note": "Public and private services, but HMO plans ONLY. Pays the provider's normal charges. Non-emergency transport NOT included.",
+      "charity_care": {
+        "applies_to": null,
+        "free_care_fpl": null,
+        "note": null
+      },
+      "citations": [
+        "https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them",
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "West Virginia",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
     },
-    "DE": { "name": "Delaware", "ambulance_balance_billing": true, "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
-    "FL": { "name": "Florida", "ambulance_balance_billing": true, "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
-    "OH": { "name": "Ohio", "ambulance_balance_billing": true, "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
-    "VT": { "name": "Vermont", "ambulance_balance_billing": true, "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
-    "ND": { "name": "North Dakota", "ambulance_balance_billing": true, "ambulance_note": "Enacted in 2025.", "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
-    "UT": { "name": "Utah", "ambulance_balance_billing": true, "ambulance_note": "Enacted in 2025.", "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
-    "NH": { "name": "New Hampshire", "ambulance_balance_billing": true, "ambulance_note": "Enacted in 2025.", "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.insurance.nh.gov/news-and-media/new-hampshire-insurance-department-applauds-landmark-legislation-ending-surprise"], "verified": "2026-08-05" },
-    "OR": { "name": "Oregon", "ambulance_balance_billing": true, "ambulance_note": "HB 3243 (2025).", "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://dfr.oregon.gov/business/reg/health/pages/ground-ambulance-rate-reporting.aspx"], "verified": "2026-08-05" },
-    "MN": { "name": "Minnesota", "ambulance_balance_billing": false, "surprise_billing_law": null, "charity_care": { "applies_to": null, "free_care_fpl": null, "note": null }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://www.commonwealthfund.org/blog/2026/consumers-still-face-surprise-bills-ground-ambulances-states-are-trying-protect-them"], "verified": "2026-08-05" },
-    "CT": { "name": "Connecticut", "ambulance_balance_billing": null, "surprise_billing_law": null, "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"], "verified": "2026-08-05" },
-    "NV": { "name": "Nevada", "ambulance_balance_billing": null, "surprise_billing_law": null, "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"], "verified": "2026-08-05" },
-    "NJ": { "name": "New Jersey", "ambulance_balance_billing": null, "surprise_billing_law": null, "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"], "verified": "2026-08-05" },
-    "RI": { "name": "Rhode Island", "ambulance_balance_billing": null, "surprise_billing_law": null, "charity_care": { "applies_to": "all", "free_care_fpl": null, "note": "Financial-assistance requirements reported to apply to all hospitals." }, "state_program": null, "all_payer_rate_setting": false, "citations": ["https://coveredusa.org/en/blog/hospital-charity-care-qualify-2026"], "verified": "2026-08-05" }
+    "WY": {
+      "all_payer_rate_setting": false,
+      "ambulance_balance_billing": false,
+      "ambulance_note": null,
+      "charity_care": null,
+      "citations": [
+        "https://www.commonwealthfund.org/publications/maps-and-interactives/expanding-no-surprises-act-protect-consumers-surprise-ambulance"
+      ],
+      "name": "Wyoming",
+      "state_program": null,
+      "surprise_billing_law": null,
+      "verified": "2026-09-07"
+    }
   }
 }

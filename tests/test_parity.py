@@ -425,7 +425,9 @@ class TestParity(unittest.TestCase):
         got = self.assertParity(lines, ctx, label="MA state layer")
         rules = {g["rule"] for g in got}
         self.assertIn("state_assistance_program", rules)
-        self.assertIn("state_ambulance_unknown", rules)
+        # Was "unknown" until the Commonwealth Fund map (Feb 2026) resolved it:
+        # Massachusetts has no ground-ambulance protection.
+        self.assertIn("state_ambulance_unprotected", rules)
 
     def test_state_layer_agrees_south_carolina(self):
         lines = [Line(idx=1, code="J1885", units=1, charge=180.0, date="d")]
@@ -435,10 +437,21 @@ class TestParity(unittest.TestCase):
         self.assertIn("state_ambulance_unprotected", rules)
         self.assertIn("state_debt_sol", rules)
 
-    def test_unresearched_state_agrees_and_says_so(self):
+    def test_partially_researched_state_says_which_part_is_unknown(self):
+        """Every jurisdiction now has an entry, so "no entry" no longer carries the
+        uncertainty. A state whose charity-care law is unresearched must still say
+        so -- silence there would read as "no such law here"."""
         lines = [Line(idx=1, code="J1885", units=1, charge=180.0, date="d")]
         ctx = Context(insured=False, state="WY")
-        got = self.assertParity(lines, ctx, label="unresearched state")
+        got = self.assertParity(lines, ctx, label="partially researched state")
+        rules = {g["rule"] for g in got}
+        self.assertIn("state_assistance_not_researched", rules)
+        self.assertNotIn("state_not_researched", rules)
+
+    def test_unknown_state_code_still_says_not_researched(self):
+        lines = [Line(idx=1, code="J1885", units=1, charge=180.0, date="d")]
+        ctx = Context(insured=False, state="ZZ")
+        got = self.assertParity(lines, ctx, label="bogus state code")
         self.assertIn("state_not_researched", {g["rule"] for g in got})
 
     def test_self_funded_plan_downgrades_state_protection(self):

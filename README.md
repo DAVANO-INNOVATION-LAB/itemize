@@ -104,9 +104,19 @@ a federal source behind it.** Three rules keep it honest:
    roughly two-thirds of workers with employer coverage. Answer "self-funded"
    and every state protection is demoted with an explanation.
 
-24 states currently have entries. Of the ~22 states reported to have
-ground-ambulance protections, 16 are identified by name; the rest are left
-`null` rather than guessed.
+**Ground-ambulance law is now recorded for all 51 jurisdictions**, from the
+Commonwealth Fund / Georgetown CHIR map updated February 2026: 22 states have a
+protection, 29 do not, and none are left unknown. Each protected state records
+how the payment is set and whether non-emergency transport is covered — and,
+where the statute sunsets, when: **Texas 1 Sep 2027, Utah 1 Jul 2027, Mississippi
+30 Jun 2028**, and Washington's 325%-of-Medicare fallback 31 Dec 2027. Illinois
+expands to private state-regulated plans on 1 Jan 2027.
+
+Charity-care and state-assistance law is researched for **24** of them. The other
+27 carry `null` there, and a reader in one of those states is told *specifically*
+that this aspect is unresearched — because once every state had an entry,
+"has an entry" stopped meaning "researched", and silence would have read as
+"no such law here".
 
 ### Coverage context changes what you are shown
 
@@ -409,11 +419,14 @@ Useful directions, roughly in order of value:
    exactly the confident-but-wrong failure this project is built to avoid. The
    strings are centralised enough to extract; the translation needs a human who
    knows the domain.
-3. **More states in `web/data/states.json`.** 26 states have no entry, and the
-   ~6 unidentified ambulance states need naming. Follow the rules in the file's
-   `_meta` block: citations and a `verified` date on every entry, and `null`
-   rather than a guess. Re-verifying an existing entry is as valuable as adding
-   a new one — `tests/test_itemize.py` fails the build once any entry passes
+3. **Charity-care and assistance law for the 27 states that lack it** in
+   `web/data/states.json`. Ground ambulance is complete; this is the remaining
+   gap, and it is the field that most often decides whether a reader's whole
+   balance can be written off. Follow the rules in the file's `_meta` block:
+   citations and a `verified` date on every entry, and `null` rather than a
+   guess — `false` asserts that no such law exists, which is a different claim.
+   Re-verifying an existing entry is as valuable as adding a new one, and
+   `tests/test_itemize.py` fails the build once any entry passes
    `stale_after_days`.
 4. **A 501(c)(3) lookup** so the charity-care finding fires automatically instead
    of asking the reader whether their hospital is non-profit.

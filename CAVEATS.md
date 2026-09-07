@@ -147,10 +147,20 @@ open an issue and it will be removed while the claim is checked.
 no federal source behind it, and it is the most likely thing in the repository
 to be wrong or out of date.
 
-* **24 of 50 states have entries.** A missing state means **not researched** —
-  which is never the same as "no protection". The tool says so explicitly.
-* Of the ~22 states reported to have ground-ambulance protections, **16 are
-  identified by name**. The remainder are recorded as `null` rather than guessed.
+* **Ground-ambulance law is recorded for all 51 jurisdictions** (Commonwealth
+  Fund / Georgetown CHIR map, updated February 2026): 22 protected, 29 not, none
+  unknown. Note the source's own inconsistency — its map data names 22 states
+  while the prose on the same page says 24. The 22 the data actually names are
+  what is recorded here.
+* **Several of these statutes sunset**: Texas 1 Sep 2027, Utah 1 Jul 2027,
+  Mississippi 30 Jun 2028, and Washington's 325%-of-Medicare fallback
+  31 Dec 2027. An entry that outlives its statute is worse than no entry.
+* **Charity-care and assistance law is researched for 24 of the 51.** The rest
+  carry `null`, and the tool says specifically that *that aspect* is
+  unresearched rather than going quiet — once every state had an entry, having
+  one stopped meaning "researched".
+* **Every one of these ambulance laws reaches fully insured plans only.** If
+  your plan is self-funded, none of them apply to you.
 * Many recorded fields are `null` because a source did not name them. `null`
   means unknown, not absent.
 * **Entries go stale.** Legislatures amend these every session. Each entry

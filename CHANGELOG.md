@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.4.0 — unreleased
+
+### State law: 24 entries to 51
+
+Ground-ambulance law is now recorded for **every US jurisdiction**, sourced from
+the Commonwealth Fund / Georgetown CHIR map updated February 2026. 22 states have
+a protection, 29 do not, and nothing is left unknown — closing the `_meta` gap
+that had six protected states unnamed. Each protected state records how payment
+is set and whether non-emergency transport is covered.
+
+Where a statute **sunsets**, that is now recorded: Texas 1 Sep 2027, Utah
+1 Jul 2027, Mississippi 30 Jun 2028, and Washington's 325%-of-Medicare fallback
+31 Dec 2027. Illinois expands to private state-regulated plans on 1 Jan 2027. An
+entry that silently outlives its statute is the failure this file warns about.
+
+Six previously-`null` states were resolved (California protected; Connecticut,
+Massachusetts, New Jersey, Nevada and Rhode Island not). No existing assertion
+conflicted with the source.
+
+### New: `state_assistance_not_researched`
+
+Expanding coverage changed what silence means. "Has an entry" used to be the
+signal that a state was researched — but 27 of the new entries carry
+ground-ambulance law only, so a reader in one of them would have heard nothing
+about charity care and reasonably concluded there was none. Both engines now say
+specifically which aspect is unresearched, and the state picker groups by how
+much is known rather than by whether an entry exists.
+
+### Verified
+
+The browser layer is now checked headlessly against the real page and the real
+data — boot, the confirm gate, the live region, letters, the DRG field, and that
+a hostile description cannot become live DOM. 157 tests.
+
+
 ## 0.3.0 — 2026-09-01
 
 A maturation pass over every feature, plus the dependency and reference-data

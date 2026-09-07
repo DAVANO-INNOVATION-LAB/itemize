@@ -155,6 +155,31 @@ def evaluate(lines, ref, ctx, data_dir=None):
                 lines=[], citation=_cites(entry) + _stale_suffix(sd, entry), amount=0.0))
 
     # --- charity care beyond federal 501(r) ---
+    #
+    # An entry can be PARTIALLY researched. Ground-ambulance law is recorded for
+    # all 51 jurisdictions; charity-care and state-programme law is recorded for
+    # 24. Having an entry at all used to be the signal that a state was
+    # researched, so once every state had one, silence on financial assistance
+    # would have read as "no such law here" -- which is precisely the inference
+    # this file's rules exist to prevent. Say the narrower thing instead.
+    if entry.get("charity_care") is None and entry.get("state_program") is None:
+        out.append(Finding(
+            rule="state_assistance_not_researched",
+            severity="notice",
+            title=(f"We have not researched {entry['name']}'s hospital "
+                   "financial-assistance law"),
+            detail=(f"We have a verified entry for {entry['name']} covering ground "
+                    "ambulance, but we have not researched whether the state "
+                    "imposes charity-care duties beyond federal 501(r), or runs an "
+                    "assistance programme of its own. That is **not** the same as "
+                    "saying there are none — it means we do not know, and we would "
+                    "rather say so than guess. Ask the hospital for its financial "
+                    "assistance policy regardless: a tax-exempt hospital must have "
+                    "one under federal law. Your state department of insurance or "
+                    "attorney general's consumer line will know the state rules, "
+                    "and both handle billing complaints for free."),
+            lines=[], citation=_cites(entry) + _stale_suffix(sd, entry)))
+
     cc = entry.get("charity_care") or {}
     if cc.get("applies_to") == "all":
         out.append(Finding(

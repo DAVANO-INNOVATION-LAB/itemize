@@ -1093,3 +1093,81 @@ class TestNulBytes(unittest.TestCase):
                       "\x002026-03-14\x00,\x00J1885\x00,\x00TRAY\x00,\x001\x00,\x0010.00\x00\n")
         self.assertEqual(len(lines), 1)
         self.assertAlmostEqual(lines[0].charge, 10.00)
+
+
+class TestStateCoverage(unittest.TestCase):
+    """Every jurisdiction now has an entry, which changed what silence means."""
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        with open(os.path.join(os.path.dirname(FIX), "..", "web", "data",
+                               "states.json")) as f:
+            cls.data = json.load(f)
+        cls.states = cls.data["states"]
+
+    def test_all_fifty_one_jurisdictions_present(self):
+        self.assertEqual(len(self.states), 51)
+
+    def test_no_ambulance_field_is_unknown(self):
+        """The original file left ~6 protected states unnamed. The Commonwealth
+        Fund map resolved every one."""
+        unknown = [k for k, e in self.states.items()
+                   if e.get("ambulance_balance_billing") is None]
+        self.assertEqual(unknown, [])
+
+    def test_protected_count_matches_the_source(self):
+        n = sum(1 for e in self.states.values() if e["ambulance_balance_billing"])
+        self.assertEqual(n, 22)
+
+    def test_every_entry_is_cited_and_dated(self):
+        for code, e in self.states.items():
+            self.assertTrue(e.get("citations"), code)
+            self.assertTrue(e.get("verified"), code)
+            datetime.date.fromisoformat(e["verified"])
+
+    def test_protected_states_explain_the_protection(self):
+        for code, e in self.states.items():
+            if e["ambulance_balance_billing"]:
+                self.assertTrue((e.get("ambulance_note") or "").strip(), code)
+
+    def test_unresearched_fields_are_null_never_false(self):
+        """`false` is an assertion that there is no such law. Only `null` means
+        we did not look -- filling the gap with false is the specific mistake
+        this file's own rules forbid."""
+        for code, e in self.states.items():
+            self.assertIn(type(e.get("charity_care")), (dict, type(None)), code)
+            self.assertIn(type(e.get("state_program")), (dict, type(None)), code)
+
+    def test_partially_researched_state_says_so(self):
+        import tempfile
+        import json
+        from itemize import states as states_mod
+        tmp = tempfile.mkdtemp()
+        with open(os.path.join(tmp, "states.json"), "w") as f:
+            json.dump(self.data, f)
+        partial = next(k for k, e in self.states.items()
+                       if e.get("charity_care") is None)
+        found = states_mod.evaluate([Line(idx=1, charge=100.0)], FakeRef(),
+                                    Context(state=partial), tmp)
+        rules_fired = {x.rule for x in found}
+        self.assertIn("state_assistance_not_researched", rules_fired, partial)
+        self.assertNotIn("state_not_researched", rules_fired)
+
+    def test_fully_researched_state_does_not_get_the_partial_notice(self):
+        import tempfile
+        import json
+        from itemize import states as states_mod
+        tmp = tempfile.mkdtemp()
+        with open(os.path.join(tmp, "states.json"), "w") as f:
+            json.dump(self.data, f)
+        found = states_mod.evaluate([Line(idx=1, charge=100.0)], FakeRef(),
+                                    Context(state="MA"), tmp)
+        self.assertNotIn("state_assistance_not_researched", {x.rule for x in found})
+
+    def test_sunsetting_laws_are_recorded(self):
+        """Texas, Utah, Mississippi and Washington's fallback all expire. An entry
+        that silently outlives its statute is the failure this file warns about."""
+        for code in ("TX", "UT", "MS"):
+            self.assertIn("EXPIRES", self.states[code]["ambulance_note"], code)
+        self.assertIn("expires", self.states["WA"]["ambulance_note"])
