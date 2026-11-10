@@ -29,6 +29,10 @@ by service code does not establish that the documents cover the same claim.
 
 ### Offline verification and limits
 
+* Pinned the CI test runner to Ubuntu 24.04 so the declared Python 3.9 floor
+  remains tested. Ubuntu 26.04 (now `ubuntu-latest`) has no Python 3.9 build
+  available through `setup-python`; the Python matrix is unchanged.
+
 * Added 11 regression/stress tests, including 400 seeded overlap graphs and 400
   seeded EOB cases, Python/JavaScript parity, permutation and repeat-finding
   invariants, credits, and arithmetic/duplicate/EOB overlap.

@@ -6,7 +6,9 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Keep the declared Python 3.9 floor testable: setup-python has no 3.9
+    # build for Ubuntu 26.04, now selected by ubuntu-latest.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
