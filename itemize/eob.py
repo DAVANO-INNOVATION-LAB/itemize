@@ -133,10 +133,11 @@ def cross_check(lines, eob_rows, ref, tolerance=0.01):
         if not rows or code in seen:
             continue
         seen.add(code)
-        resp = sum(r["patient"] for r in rows if r["patient"] is not None)
-        charged = sum(l.charge for l in lines if (l.code or "").upper() == code)
-        if resp is None:
+        # A partial sum is not the responsibility for the entire code group.
+        if any(r["patient"] is None for r in rows):
             continue
+        resp = sum(r["patient"] for r in rows)
+        charged = sum(l.charge for l in lines if (l.code or "").upper() == code)
         over = charged - resp
         if over > max(tolerance, resp * 0.01):
             findings.append(Finding(
@@ -160,7 +161,8 @@ def cross_check(lines, eob_rows, ref, tolerance=0.01):
 
     # Whole-bill: the statement asks for more than the EOB totals.
     over_total = billed_total - eob_patient_total
-    if eob_patient_total > 0 and over_total > max(1.0, eob_patient_total * 0.02):
+    if (all(r["patient"] is not None for r in eob_rows)
+            and over_total > max(1.0, eob_patient_total * 0.02)):
         findings.append(Finding(
             rule="eob_total_mismatch",
             severity="high",

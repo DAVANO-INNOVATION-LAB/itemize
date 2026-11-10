@@ -974,7 +974,8 @@
       const rows = byCode[code];
       if (!rows || seen.has(code)) continue;
       seen.add(code);
-      const resp = sum(rows.filter((r) => r.patient != null), (r) => r.patient);
+      if (rows.some((r) => r.patient == null)) continue;
+      const resp = sum(rows, (r) => r.patient);
       const charged = sum(lines.filter((l) => (l.code || '').toUpperCase() === code), (l) => l.charge);
       const over = charged - resp;
       if (over > Math.max(0.01, resp * 0.01)) out.push(F({
@@ -987,7 +988,7 @@
     }
 
     const overTotal = billedTotal - eobTotal;
-    if (eobTotal > 0 && overTotal > Math.max(1.0, eobTotal * 0.02)) out.push(F({
+    if (eobRows.every((r) => r.patient != null) && overTotal > Math.max(1.0, eobTotal * 0.02)) out.push(F({
       rule: 'eob_total_mismatch', severity: 'high',
       title: `Statement totals ${fmt(billedTotal)}; EOB patient responsibility totals ${fmt(eobTotal)}`,
       detail: `Across every line, your EOB puts your responsibility at ${fmt(eobTotal)} but this statement asks for ${fmt(billedTotal)}, a difference of ${fmt(overTotal)}. A statement showing full charges rather than your post-adjudication balance is common and is not always an error — but you should not pay from the statement until the two agree. Ask for a statement that reflects the processed claim.`,
@@ -1070,7 +1071,7 @@ that identifies the medical record entry supporting it.
 
 Where I have cited a federal file above, I have attached the relevant page. I am
 happy to be shown that I have misread it.
-` + (total ? `\nThe disputed amount is ${fmt(total)} of the balance.\n` : '') + L_CLOSE,
+` + (total ? `\nThe disputed amount is ${fmt(total)} of the balance. Individual findings may overlap; this conservative total counts only the largest amount per connected group.\n` : '') + L_CLOSE,
     },
     assistance: {
       label: 'Apply for hospital financial assistance',
@@ -1175,7 +1176,33 @@ Fewer than one per cent of denied claims are appealed. I am appealing this one.
 
   const MAX_ACTIONS = 3;
 
-  function nextActions(findings, ctx, limit) {
+  // Mirrors disputable_total: largest positive amount per connected overlap
+  // group, not a sum of alternative explanations of the same dollars.
+  function disputableTotal(findings, lines) {
+    const parent = [], amounts = [], owner = new Map();
+    function root(i) {
+      while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; }
+      return i;
+    }
+    for (const f of findings) {
+      if (!f.recoverable || !f.lines.length || f.amount <= 0) continue;
+      const i = parent.length;
+      parent.push(i); amounts.push(f.amount);
+      for (const line of f.lines) {
+        if (owner.has(line)) {
+          const a = root(i), b = root(owner.get(line));
+          if (a !== b) { parent[b] = a; amounts[a] = Math.max(amounts[a], amounts[b]); }
+        }
+        owner.set(line, i);
+      }
+    }
+    let total = 0;
+    for (let i = 0; i < parent.length; i++) if (root(i) === i) total += amounts[i];
+    if (lines != null) total = Math.min(total, Math.max(0, sum(lines, (l) => l.charge)));
+    return total;
+  }
+
+  function nextActions(findings, ctx, limit, billLines) {
     limit = limit === undefined ? MAX_ACTIONS : limit;
     const fired = new Set(findings.map((f) => f.rule));
     const out = [];
@@ -1185,7 +1212,7 @@ Fewer than one per cent of denied claims are appealed. I am appealing this one.
       if (key === 'dispute') {
         hits = findings.filter((f) => f.recoverable && f.lines.length);
         if (!hits.length) continue;
-        amount = Math.round(sum(hits, (f) => f.amount) * 100) / 100;
+        amount = Math.round(disputableTotal(hits, billLines) * 100) / 100;
       } else {
         if (!ruleNames.some((r) => fired.has(r))) continue;
         hits = findings.filter((f) => ruleNames.indexOf(f.rule) >= 0);
@@ -1418,7 +1445,7 @@ Fewer than one per cent of denied claims are appealed. I am appealing this one.
   return {
     classify, Reference, Context, audit, rights, stateFindings, eobCrossCheck, applyContext,
     parseBill, parseDelimited, parseText, parseEob,
-    LETTERS, suggestLetters, nextActions, MAX_ACTIONS,
+    LETTERS, suggestLetters, nextActions, disputableTotal, MAX_ACTIONS,
     money, num, fmt, RULES, SEV_ORDER,
     ASP_NOTICE_MULTIPLE, ASP_HIGH_MULTIPLE, DME_NOTICE_MULTIPLE, DME_HIGH_MULTIPLE,
     GFE_DISPUTE_THRESHOLD,

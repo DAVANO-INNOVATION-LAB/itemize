@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.5.1 — 2026-11-10
+
+### Correctness fixes
+
+* **Missing EOB responsibility is unknown, not zero.** Both rule engines now
+  require every responsibility value in a code group before comparing that
+  group with the bill. A partially missing group is not summed as though the
+  missing rows were $0. Whole-EOB comparisons likewise require complete
+  responsibility values. Other complete code groups still get checked.
+  Explicit $0 and signed credit amounts remain known amounts.
+* **Overlapping findings no longer inflate the review total.** Findings sharing
+  bill-line IDs, including transitive overlap, form a connected group. Only the
+  largest positive amount in each group contributes to the total; disjoint
+  groups add. Whole-bill protections stay separate. Output totals remain capped
+  at the nonnegative net bill total, including credits. Python Markdown, JSON
+  and actions and browser summaries, announcements, Markdown, actions and
+  dispute-letter drafts use the same aggregation. For two identical $100 lines
+  and a $50 EOB responsibility, the combined review amount is $150, not $200 or
+  $250. Individual findings remain visible and their amounts are not additive.
+
+This is a deliberately conservative amount to review, not guaranteed savings,
+an adjudicated balance, or validation of medical or legal claims. Taking the
+largest amount per connected group may undercount separate errors when their
+allocation within overlapping findings is unknown. Missing EOB amounts suppress
+comparisons; they do not establish that the bill is correct. Existing matching
+by service code does not establish that the documents cover the same claim.
+
+### Offline verification and limits
+
+* Added 11 regression/stress tests, including 400 seeded overlap graphs and 400
+  seeded EOB cases, Python/JavaScript parity, permutation and repeat-finding
+  invariants, credits, and arithmetic/duplicate/EOB overlap.
+* Exercised 20,000-finding connected chains, 20,000 disjoint findings and a
+  10,000-line/10,000-row EOB group with explicit-zero and partly missing values.
+* Browser output-function tests execute the real rendering, announcement,
+  Markdown, action and letter code with a stub DOM. They are not real-browser
+  layout, accessibility, service-worker or multi-device tests.
+* Synthetic offline inputs contain no patient data. These checks do not validate
+  real insurer adjudication, current statutes, CMS data accuracy or external
+  service availability. The release does not change reference data or legal
+  rules. Local checks used Python 3.12 and Node 24; the existing CI matrix remains
+  responsible for Python 3.9, 3.11 and 3.14 coverage.
+
 ## 0.5.0 — unreleased
 
 ### Financial-assistance law for all 51 jurisdictions

@@ -98,9 +98,8 @@ function render(lines, findings, ctx, stats) {
   // Line-level disputes and whole-bill protections are never added together:
   // an entitlement covers the whole balance, so summing them can produce a
   // "disputable" figure larger than the bill itself.
-  const lineLevel = findings.filter((f) => f.recoverable && f.lines.length);
   const wholeBill = findings.filter((f) => f.recoverable && !f.lines.length);
-  const recoverable = Math.min(lineLevel.reduce((s, f) => s + f.amount, 0), total);
+  const recoverable = I.disputableTotal(findings, lines);
 
   const stat = [
     ['Lines reviewed', String(lines.length)],
@@ -117,7 +116,7 @@ function render(lines, findings, ctx, stats) {
     `<div class="stat${flag ? ' flag' : ''}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('');
 
   renderParseCheck(lines, stats);
-  renderActions(findings, ctx);
+  renderActions(findings, ctx, lines);
 
   const lineRefs = (idxs) => (idxs || []).map((n) =>
     `<a class="lineref" href="#line-${n}">${n}</a>`).join(' ');
@@ -186,8 +185,8 @@ function renderParseCheck(lines, stats) {
     you act on anything here or send the evidence packet.`;
 }
 
-function renderActions(findings, ctx) {
-  const acts = I.nextActions(findings, ctx);
+function renderActions(findings, ctx, lines) {
+  const acts = I.nextActions(findings, ctx, undefined, lines);
   if (!acts.length) { $('#actions').innerHTML = ''; return; }
   const lineRefs = (idxs) => (idxs || []).map((n) =>
     `<a class="lineref" href="#line-${n}">${n}</a>`).join(' ');
@@ -195,7 +194,9 @@ function renderActions(findings, ctx) {
     <div class="actions">
       <h3>What to do first</h3>
       <p class="hint">Ranked by what actually moves a balance, not by how alarming it
-      reads. Everything else is below.</p>
+      reads. Everything else is below. Overlapping findings count only once, using
+      the largest amount per connected group. This conservative review amount
+      is not guaranteed savings; individual findings are not additive.</p>
       <ol>${acts.map((a) => `
         <li>
           <span class="act-title">${esc(a.title)}</span>
@@ -212,9 +213,8 @@ function renderActions(findings, ctx) {
 /* ------------------------------------------------------------ evidence */
 function toMarkdown(lines, findings, ctx) {
   const total = lines.reduce((s, l) => s + l.charge, 0);
-  const lineLevel = findings.filter((f) => f.recoverable && f.lines.length);
   const wholeBill = findings.filter((f) => f.recoverable && !f.lines.length);
-  const rec = Math.min(lineLevel.reduce((s, f) => s + f.amount, 0), total);
+  const rec = I.disputableTotal(findings, lines);
   const out = ['# Itemized bill review', '',
     `- Lines parsed: **${lines.length}**`,
     `- Total charges: **${fmt(total)}**`,
@@ -222,8 +222,10 @@ function toMarkdown(lines, findings, ctx) {
   if (rec > 0) out.push(`- Directly disputable line items: **${fmt(rec)}**`);
   if (wholeBill.length) out.push(`- Whole-bill protections that may apply: **${wholeBill.length}** `
     + '(these cover the balance, and are not added to the line-item figure above)');
+  out.push('', 'Overlapping findings count only once, using the largest amount per connected group. '
+    + 'This conservative review amount is not guaranteed savings; individual findings are not additive.');
 
-  const acts = I.nextActions(findings, ctx);
+  const acts = I.nextActions(findings, ctx, undefined, lines);
   if (acts.length) {
     out.push('', '## What to do first', '');
     acts.forEach((a, i) => {
@@ -276,7 +278,7 @@ function letterText(kind) {
   const total = lastLines.reduce((s, l) => s + l.charge, 0);
   const disputable = lastFindings.filter((f) => f.recoverable && f.lines.length);
   return I.LETTERS[kind].build(lastCtx, disputable,
-    kind === 'dispute' ? disputable.reduce((s, f) => s + f.amount, 0) : total);
+    kind === 'dispute' ? I.disputableTotal(disputable, lastLines) : total);
 }
 
 function showLetter(kind) {

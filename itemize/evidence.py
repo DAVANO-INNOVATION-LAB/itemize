@@ -7,7 +7,7 @@ with an unsourced claim is ignore it.
 from __future__ import annotations
 
 from . import __version__
-from .rules import SEV_ORDER
+from .rules import SEV_ORDER, disputable_total
 
 LABEL = {"high": "HIGH", "warn": "REVIEW", "notice": "QUESTION", "info": "NOTE"}
 
@@ -33,14 +33,8 @@ Verify anything here before relying on it. The sources are listed so you can.
 
 def render(lines, findings, ref, title="Itemized bill review", ctx=None):
     total = sum(l.charge for l in lines)
-    # Line-level disputes and whole-bill protections must NOT be added together.
-    # An entitlement (charity care, a prohibited balance bill) is scoped to the
-    # whole balance, so summing it with a duplicate charge produces a "disputable"
-    # figure larger than the bill -- which is the fastest way to lose a billing
-    # office's attention.
-    line_level = [f for f in findings if f.recoverable and f.lines]
     whole_bill = [f for f in findings if f.recoverable and not f.lines]
-    recoverable = min(sum(f.amount for f in line_level), total) if line_level else 0.0
+    recoverable = disputable_total(findings, lines)
     counts = {}
     for f in findings:
         counts[f.severity] = counts.get(f.severity, 0) + 1
@@ -57,6 +51,10 @@ def render(lines, findings, ref, title="Itemized bill review", ctx=None):
         out.append(f"- Whole-bill protections that may apply: **{len(whole_bill)}** "
                    "(see findings; these cover the balance, and are not added to the "
                    "line-item figure above)")
+    out.append("")
+    out.append("Overlapping line findings count only once, using the largest amount "
+               "per connected group. This conservative review amount is not "
+               "guaranteed savings; individual findings are not additive.")
     out.append("")
 
     if ctx is not None:
@@ -152,7 +150,6 @@ def to_json(lines, findings, ref, ctx=None, title="Itemized bill review"):
     from .rules import next_actions
 
     total = sum(l.charge for l in lines)
-    line_level = [f for f in findings if f.recoverable and f.lines]
     whole_bill = [f for f in findings if f.recoverable and not f.lines]
     payload = {
         "tool": "itemize",
@@ -161,17 +158,19 @@ def to_json(lines, findings, ref, ctx=None, title="Itemized bill review"):
         "disclaimer": ("Information, not advice. A Medicare benchmark is not a price "
                        "cap and NADAC is acquisition cost, not an allowed amount. "
                        "Only findings with recoverable=true represent a directly "
-                       "disputable amount."),
+                       "disputable amount. Individual findings are not additive: overlapping "
+                       "line findings contribute only the largest amount per connected "
+                       "group. This conservative review total is not guaranteed savings."),
         "summary": {
             "lines": len(lines),
             "total_charges": round(total, 2),
             "findings": len(findings),
             "disputable_line_items": round(
-                min(sum(f.amount for f in line_level), total), 2),
+                disputable_total(findings, lines), 2),
             "whole_bill_protections": len(whole_bill),
         },
         "context": ctx.to_dict() if ctx else None,
-        "next_actions": next_actions(findings, ctx),
+        "next_actions": next_actions(findings, ctx, lines=lines),
         "findings": [f.to_dict() for f in findings],
         "lines": [
             {"idx": l.idx, "date": l.date, "code": l.code, "ndc": l.ndc,

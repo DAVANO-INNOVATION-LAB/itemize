@@ -691,7 +691,43 @@ ACTION_SPECS = (
 MAX_ACTIONS = 3
 
 
-def next_actions(findings, ctx=None, limit=MAX_ACTIONS):
+def disputable_total(findings, lines=None):
+    """Conservative review amount, not savings or an adjudicated balance.
+
+    Shared line IDs connect findings (including transitive overlap). Each
+    connected component contributes only its largest positive amount. Disjoint
+    components add; whole-bill protections never do. This may undercount when
+    allocation within overlapping findings is unknown. With bill lines supplied,
+    cap the result at the nonnegative net bill total. Mirrors disputableTotal.
+    """
+    parent, amounts, owner = [], [], {}
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for f in findings:
+        if not f.recoverable or not f.lines or f.amount <= 0:
+            continue
+        i = len(parent)
+        parent.append(i)
+        amounts.append(f.amount)
+        for line in f.lines:
+            if line in owner:
+                a, b = root(i), root(owner[line])
+                if a != b:
+                    parent[b] = a
+                    amounts[a] = max(amounts[a], amounts[b])
+            owner[line] = i
+    total = sum(amounts[i] for i in range(len(parent)) if root(i) == i)
+    if lines is not None:
+        total = min(total, max(0.0, sum(l.charge for l in lines)))
+    return total
+
+
+def next_actions(findings, ctx=None, limit=MAX_ACTIONS, lines=None):
     """The few things worth doing first, most valuable first.
 
     Returns dicts with a stable `key` so the browser and the evidence packet
@@ -704,7 +740,7 @@ def next_actions(findings, ctx=None, limit=MAX_ACTIONS):
             hits = [f for f in findings if f.recoverable and f.lines]
             if not hits:
                 continue
-            amount = sum(f.amount for f in hits)
+            amount = disputable_total(hits, lines)
             out.append({"key": key, "title": title, "why": why, "letter": letter,
                         "amount": round(amount, 2),
                         "lines": sorted({i for f in hits for i in f.lines})})

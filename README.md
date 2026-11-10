@@ -399,6 +399,21 @@ probe.py              endpoint reconnaissance for CMS data sources
 tests/                unittest suite, including Python/JS parity
 ```
 
+### Conservative review totals
+
+Individual findings can describe the same dollars. Line findings sharing line
+IDs, including transitive overlaps, count as one group: the total uses only the
+largest positive amount in each group, adds disjoint groups, and caps the result
+at the nonnegative net bill total. Whole-bill protections are separate. This can
+undercount when allocation is unknown; it is an amount to review, not promised
+savings. The packets, browser summaries, next actions and browser dispute drafts
+use this same calculation.
+
+A blank EOB patient-responsibility field is unknown, not $0. A code group with
+any missing responsibility is not compared numerically, and a whole-EOB total
+requires every responsibility value. Explicit zero remains a known amount.
+Check that the EOB and statement concern the same claim before relying on them.
+
 ### Two engines, one behaviour
 
 `web/rules.js` and `itemize/rules.py` implement the same rules. Nothing about
