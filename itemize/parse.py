@@ -342,12 +342,13 @@ def _text_line(s, idx):
 def _receipt_header(parts):
     # Plain Total is not a charge alias outside this explicitly labeled layout.
     cells = [v.lower().strip() for v in parts]
-    return ((len(cells) == 5 or (len(cells) == 6 and re.fullmatch(r"[a-z][a-z -]{1,38}", cells[1])))
+    valid = ((len(cells) == 5 or (len(cells) == 6 and re.fullmatch(r"[a-z][a-z -]{1,38}", cells[1])))
             and re.fullmatch(r"(?:item |service )?description", cells[0])
             and re.fullmatch(r"qty|quantity|units", cells[-4])
             and re.fullmatch(r"(?:unit )?price", cells[-3])
             and re.fullmatch(r"discounts?", cells[-2])
             and re.fullmatch(r"(?:line )?total", cells[-1]))
+    return cells[-3] if valid else ""
 
 
 def _receipt_footer(s):
@@ -357,7 +358,7 @@ def _receipt_footer(s):
                             r"\s*[:=]?\s*(?:\$|[0-9]|$)", s, re.I))
 
 
-def _receipt_line(s, idx):
+def _receipt_line(s, idx, price_label):
     left = _normalize_money(s)
     amounts = []
     while len(amounts) < 3:
@@ -376,9 +377,11 @@ def _receipt_line(s, idx):
     grouped = re.split(r"\s{2,}", left[:q.start()].rstrip())
     desc = grouped[0]
     cents = lambda n: math.floor(n * 100 + 0.5)
+    # Plain Price may be per unit or already extended by quantity.
+    matches = lambda n: abs(cents(n) - cents(discount) - cents(charge)) <= 1
     if (len(grouped) > 2 or not re.search(r"[A-Za-z]{2}", desc) or _metadata(desc)
             or "$" in desc or not units or price < 0 or charge < 0
-            or abs(cents(units * price) - cents(discount) - cents(charge)) > 1):
+            or not (matches(units * price) or (price_label == "price" and matches(price)))):
         return None
     # Do not treat a receipt's SKU or its pre-discount unit price as medical evidence.
     return Line(idx=idx, code="", desc=desc[:160], units=units, charge=charge, raw=s[:300])
@@ -397,8 +400,9 @@ def parse_text(text, stats=None):
         raw_count += 1
         parts = re.split(r"\s{2,}", s)
         cols = _map_headers(parts) if len(parts) > 1 else {}
-        if _receipt_header(parts):
-            receipt = True
+        price_label = _receipt_header(parts)
+        if price_label:
+            receipt = price_label
             closed_receipt = False
             header = None
             ignored += 1
@@ -418,7 +422,7 @@ def parse_text(text, stats=None):
         # A multi-money statement is only safe when its layout survives and
         # the actual charge column can be identified; never use its last cell.
         if receipt:
-            line = None if closed_receipt else _receipt_line(s, len(lines) + 1)
+            line = None if closed_receipt else _receipt_line(s, len(lines) + 1, receipt)
         elif header:
             line = _aligned_line(parts, header, len(lines) + 1, s)
         else:

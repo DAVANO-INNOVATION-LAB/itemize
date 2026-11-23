@@ -14,6 +14,66 @@ function failure(code, message) {
   return error;
 }
 
+// Common receipt export: amounts are vertically centered beside a wrapped
+// two-line description. Narrow safety rule: a clearly labelled receipt table,
+// one isolated numeric center row, and two exclusive description fragments at
+// nearly equal distances. Never attach an unbalanced or cross-column fragment.
+function rejoinCenteredDescriptions(rows) {
+  const rendered = [];
+  let header;
+  const price = /^\(?-?\$[ \t]?(?:[0-9]{1,12}|[0-9]{1,3}(?:,[0-9]{3}){1,3})\.[0-9]{2}\)?$/;
+  const qty = /^[0-9]{1,4}(?:\.[0-9]{1,3})?$/;
+  function receiptHeader(boxes) {
+    const words = boxes.map(b => b.str.toLowerCase().trim());
+    const q = words.findIndex(s => /^(?:qty\.?|quantity)$/.test(s));
+    if (words[0] !== 'description' || q < 1 || q > 2 ||
+        !['price', 'unit price'].includes(words[q + 1])) return null;
+    const names = words.slice(q + 2).join('|');
+    if (names !== 'total' && names !== 'discount|total') return null;
+    return {first:boxes[0], boundary:boxes[1].x, fields:boxes.slice(q)};
+  }
+  function fits(b, column, previous, next) {
+    const leftLimit = previous ? (column.x + previous.x) / 2 : column.x - 14;
+    const rightLimit = next ? (column.end + next.x) / 2 : column.end + 14;
+    const center = (b.x + b.end) / 2;
+    return center >= leftLimit && center <= rightLimit
+      && Math.min(Math.abs(b.x - column.x), Math.abs(b.end - column.end)) <= 12;
+  }
+  function descriptionBox(boxes, h) {
+    if (boxes.length !== 1) return null;
+    const [b] = boxes;
+    return Math.abs(b.x - h.first.x) <= 5 && b.end < h.boundary - 2 &&
+      /\p{L}{2}/u.test(b.str) && !/^(?:description|subtotal|grand total|amount due|payments?)\b/i.test(b.str) ? b : null;
+  }
+  for (let i = 0; i < rows.length; ++i) {
+    const row = rows[i];
+    const seen = receiptHeader(row.boxes);
+    if (seen) header = {...seen, y:row.y};
+    if (header && !seen && header.y - row.y <= 450 && i + 2 < rows.length) {
+      const mid = rows[i + 1], lower = rows[i + 2];
+      const aboveGap = row.y - mid.y, belowGap = mid.y - lower.y;
+      const top = descriptionBox(row.boxes, header), bottom = descriptionBox(lower.boxes, header);
+      const fields = mid.boxes;
+      if (top && bottom && Math.abs(top.x - bottom.x) <= 1.5 &&
+          aboveGap >= 3 && aboveGap <= 8 && belowGap >= 3 && belowGap <= 8 &&
+          Math.abs(aboveGap - belowGap) <= 1 &&
+          fields.length === header.fields.length &&
+          qty.test(fields[0].str) && fields.slice(1).every(b => price.test(b.str)) &&
+          fields.every((b, j) => (!j || fields[j - 1].end <= b.x) &&
+            fits(b, header.fields[j], header.fields[j - 1], header.fields[j + 1]))) {
+        rendered.push({y:mid.y, boxes:[
+          {x:top.x, end:Math.max(top.end,bottom.end), str:top.str + ' ' + bottom.str},
+          ...fields,
+        ]});
+        i += 2;
+        continue;
+      }
+    }
+    rendered.push(row);
+  }
+  return rendered;
+}
+
 export function assemblePage(items) {
   const rows = [];
   const boxes = [];
@@ -33,9 +93,9 @@ export function assemblePage(items) {
     }
     row.boxes.push(cell);
   }
-  return rows.map(row => {
+  for (const row of rows) row.boxes.sort((a,b) => a.x - b.x);
+  return rejoinCenteredDescriptions(rows).map(row => {
     let text = '', lastRight = null;
-    row.boxes.sort((a,b) => a.x - b.x);
     for (const cell of row.boxes) {
       if (lastRight !== null) {
         const gap = cell.x - lastRight;

@@ -132,6 +132,43 @@ class PreparedPdfTextLayout(unittest.TestCase):
         """)
         self.assertEqual(out, "Address\nCode 99283  $1.00\nNext row")
 
+    def test_only_aligned_symmetric_wrapped_descriptions_rejoin(self):
+        out = self.node("""
+            import {assemblePage} from './web/pdf_text.mjs';
+            const box = (str,x,y,width) => ({str,transform:[1,0,0,1,x,y],width});
+            const hd = [
+              box('Description',64.3,200,46), box('Procedure',185.7,200,38),
+              box('Qty',256.4,200,12), box('Price',291.8,200,18),
+              box('Discount',335.3,200,32), box('Total',525.6,200,19.6),
+            ];
+            const upper = box('Example service with',64.3,184.9,103.5);
+            const lower = box('wrap',64.3,175.1,27.5);
+            const amounts = [
+              box('2',256.4,180,4), box('$45.00',291.8,180,24),
+              box('$10.00',335.3,180,24), box('$80.00',522,180,30.3),
+            ];
+            const tests = [
+              [...hd,upper,...amounts,lower],
+              [...hd,upper,...amounts],                              // missing lower
+              [...hd,upper,...amounts,box('wrap',64.3,174,27.5)],     // asymmetric
+              [...hd,upper,...amounts,box('wrap',181,175.1,28)],      // identifier zone
+              [...hd,upper,...amounts,box('extra',140,175.1,20),lower], // ambiguous
+              [...hd,upper,...amounts,box('middle',64.3,177,25),lower], // intervening
+              [...hd,upper,...amounts.slice(0,3),box('$80.00',491,180,30.3),lower], // off column
+              [...hd.slice(1),upper,...amounts,lower],               // no Description header
+            ];
+            console.log(JSON.stringify(tests.map(assemblePage)));
+        """)
+        self.assertEqual(out[0].splitlines(), [
+            "Description  Procedure  Qty  Price  Discount  Total",
+            "Example service with wrap  2  $45.00  $10.00  $80.00",
+        ])
+        for n, unchanged in enumerate(out[1:], 1):
+            with self.subTest(n=n):
+                self.assertNotIn("Example service with wrap", unchanged)
+                self.assertIn("\nExample service with\n", unchanged)
+                self.assertIn("\n2  $45.00  $10.00  $80.00", unchanged)
+
     def test_unprepared_reader_refuses_raw_cid_codes(self):
         code = SCRIPT.replace("console.error(err); process.exitCode = 1;",
                               "process.stdout.write(JSON.stringify(err.code));")

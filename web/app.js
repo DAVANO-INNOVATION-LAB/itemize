@@ -155,7 +155,7 @@ function render(lines, findings, ctx, stats) {
     `<div class="stat${flag ? ' flag' : ''}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('');
 
   renderParseCheck(lines);
-  renderOutcome(lines, findings, ctx);
+  renderOutcome(lines, findings, ctx, stats);
   renderActions(findings, ctx, lines);
 
   const lineRefs = (idxs) => (idxs || []).map((n) =>
@@ -195,16 +195,17 @@ function render(lines, findings, ctx, stats) {
   const tentative = !linesConfirmed && isTentative(lines);
   $('#charges').classList.toggle('hidden', tentative);
   for (const id of ['technical', 'exporttools']) document.getElementById(id).classList.toggle('hidden', tentative);
-  announce(lines);
+  announce(lines, stats);
   renderReadingNote(stats);
 }
 
 /* The single live region. A screen reader gets one sentence per run rather than
    the whole audit re-read every time a checkbox changes. */
-function announce(lines) {
+function announce(lines, stats) {
   const el = $('#resultstatus');
   el.textContent = `${lines.length} charge${lines.length === 1 ? '' : 's'} read`
-    + (source === 'photo' ? ' from your photo.' : '.');
+    + (source === 'photo' ? ' from your photo' : '')
+    + (stats?.uncertain ? ' · Partial review' : '.');
 }
 
 function readableDescription(line) {
@@ -254,7 +255,7 @@ function renderParseCheck(lines) {
   syncVerifyButton();
 }
 
-function renderOutcome(lines, findings, ctx) {
+function renderOutcome(lines, findings, ctx, stats) {
   const card = $('#outcome');
   if (!linesConfirmed && isTentative(lines)) {
     card.classList.add('hidden');
@@ -287,6 +288,10 @@ function renderOutcome(lines, findings, ctx) {
     label = 'One thing to check';
     headline = duplicate.lines.length === 2 ? 'A charge appears twice' : 'A charge appears more than once';
     msg = 'Ask the billing office whether these entries are for separate services. If it was one service, ask them to correct the repeated charge.';
+  } else if (stats?.uncertain && (action?.key === 'itemized' || (!action && !important))) {
+    label = 'Partial review';
+    headline = 'Some charges need a closer look';
+    msg = 'Compare the charges we read with the original before relying on this review.';
   } else if (action) {
     label = action.key === 'itemized' ? 'Charges read' : 'One next step';
     headline = {

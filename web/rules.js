@@ -449,11 +449,12 @@
   // "Total" is only an amount alias inside this explicit receipt layout.
   function receiptHeader(parts) {
     const cells = parts.map(v => v.toLowerCase().trim());
-    return (cells.length === 5 || (cells.length === 6 && /^[a-z][a-z -]{1,38}$/.test(cells[1])))
+    const valid = (cells.length === 5 || (cells.length === 6 && /^[a-z][a-z -]{1,38}$/.test(cells[1])))
       && /^(?:item |service )?description$/.test(cells[0])
       && /^(?:qty|quantity|units)$/.test(cells.at(-4))
       && /^(?:unit )?price$/.test(cells.at(-3))
       && /^discounts?$/.test(cells.at(-2)) && /^(?:line )?total$/.test(cells.at(-1));
+    return valid ? cells.at(-3) : '';
   }
 
   function receiptFooter(s) {
@@ -461,7 +462,7 @@
       || /^(?:paid|due|(?:sales\s+)?tax|total|paid\s+amount|amount\s+paid)\s*[:=]?\s*(?:\$|[0-9]|$)/i.test(s);
   }
 
-  function receiptLine(s, idx) {
+  function receiptLine(s, idx, priceLabel) {
     let left = normalizeMoney(s);
     const amounts = [];
     while (amounts.length < 3) {
@@ -479,9 +480,13 @@
     const discount = last === undefined ? 0 : Math.abs(next);
     const grouped = left.slice(0, q.index).trimEnd().split(/\s{2,}/);
     const desc = grouped[0];
+    const cents = n => Math.round(n * 100);
+    // Plain Price may be either per unit or already extended by quantity.
+    // Never infer a per-unit amount or apply this check outside this table.
+    const matches = n => Math.abs(cents(n) - cents(discount) - cents(charge)) <= 1;
     if (grouped.length > 2 || !/[A-Za-z]{2}/.test(desc) || metadata(desc)
         || /\$/.test(desc) || !units || price < 0 || charge < 0
-        || Math.abs(Math.round(units * price * 100) - Math.round(discount * 100) - Math.round(charge * 100)) > 1) return null;
+        || !(matches(units * price) || (priceLabel === 'price' && matches(price)))) return null;
     return {
       idx, code:'', desc:desc.slice(0,160), units, charge, date:'',
       modifiers:[], revenue_code:'', unit_price:0, ndc:'', suspect_columns:false,
@@ -497,11 +502,12 @@
       rawCount += 1;
       const parts = s.split(/\s{2,}/);
       const cols = parts.length > 1 ? mapHeaders(parts) : {};
-      if (receiptHeader(parts)) { receipt = true; closedReceipt = false; header = undefined; ignored += 1; continue; }
+      const priceLabel = receiptHeader(parts);
+      if (priceLabel) { receipt = priceLabel; closedReceipt = false; header = undefined; ignored += 1; continue; }
       if (billHeader(cols)) { receipt = false; closedReceipt = false; header = [parts.length, cols]; ignored += 1; continue; }
       if (receipt && receiptFooter(s)) { closedReceipt = true; ignored += 1; continue; }
       if (metadata(s)) { ignored += 1; continue; }
-      const line = receipt ? (closedReceipt ? null : receiptLine(s, lines.length + 1))
+      const line = receipt ? (closedReceipt ? null : receiptLine(s, lines.length + 1, receipt))
         : header ? alignedLine(parts, header, lines.length + 1, s) : textLine(s, lines.length + 1);
       if (line) { lines.push(line); consumed += 1; }
       else if (RE_CHARGE_END.test(normalizeMoney(s)) || (s.match(RE_DATEISH) || {}).index === 0) uncertain += 1;

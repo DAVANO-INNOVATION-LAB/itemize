@@ -81,3 +81,22 @@ process.stdout.write(JSON.stringify(findings.filter(f=>f.rule === 'exact_duplica
         node = subprocess.run(["node", "-e", script], cwd=ROOT, input=json.dumps(rows),
                               text=True, capture_output=True, check=True, timeout=15)
         self.assertEqual(sorted(json.loads(node.stdout)), [[1, 3], [4, 5]])
+
+    def test_plain_price_can_be_extended_but_explicit_unit_price_cannot(self):
+        body = ("Description  Qty  Price  Discount  Total\n"
+                "Tape  2  $8.40  $1.20  $7.20\n"
+                "Boot  4  $20.00  $20.00\n"
+                "4  $20.00  $20.00\n"
+                "Unbalanced  4  $20.00  $123.45\n")
+        lines = self.snapshot(body)["lines"]
+        self.assertEqual([r["charge"] for r in lines], [7.20, 20.00])
+        self.assertEqual(self.snapshot(body.replace("Qty  Price", "Qty  Unit Price"))["lines"], [])
+        if shutil.which("node"):
+            script = r"""
+const I=require('./web/rules.js'), fs=require('fs');
+const text=fs.readFileSync(0,'utf8');
+process.stdout.write(JSON.stringify([I.parseBill(text).map(x=>x.charge),I.parseBill(text.replace('Qty  Price','Qty  Unit Price')).map(x=>x.charge)]));
+"""
+            node = subprocess.run(["node", "-e", script], cwd=ROOT, input=body,
+                                  text=True, capture_output=True, check=True, timeout=15)
+            self.assertEqual(json.loads(node.stdout), [[7.20, 20.00], []])

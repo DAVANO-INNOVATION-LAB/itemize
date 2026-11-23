@@ -147,6 +147,17 @@ async function main() {
   assert(!element('#reading-note').textContent.includes('possible charge'));
   assert(!element('#linetable tbody').innerHTML.includes('Maple Street'));
 
+  const partialDocument = 'Description  Qty  Price  Discount  Total\n'
+    + 'Synthetic exam  1  25.00  0.00  25.00\n'
+    + '1  99.00  0.00  99.00';
+  env.newFile = filename('synthetic-partial.txt','text/plain',partialDocument);
+  await run('handleFile(newFile)');
+  assert.equal(run('lastLines.length'), 1);
+  assert.match(element('#resultstatus').textContent,/1 charge read · Partial review/);
+  assert.match(element('#outcome').innerHTML,/Some charges need a closer look/);
+  assert(!element('#outcome').innerHTML.includes('No issues'));
+  assert.match(element('#reading-note').textContent,/1 possible charge row/);
+
   env.newFile = filename('receipt.txt','text/plain','SYNTHETIC MEDICAL RECEIPT\nTOTAL $360.00');
   await run('handleFile(newFile)');
   assert.match(element('#result-title').textContent,/couldn’t identify individual charges/);
