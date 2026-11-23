@@ -477,12 +477,14 @@ h3 { font-family: Georgia, serif; font-weight: 600; font-size: 1.08rem; margin: 
   margin: .2rem 0 .7rem; padding: .7rem 0; border-block: 1px solid var(--line); font-size: .92rem; }
 .flagged-charge strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .parsecheck { margin: .85rem 0 0; }
-.verify-charges { max-height: 15rem; margin: .75rem 0; padding: 0 .75rem; overflow: auto;
+.verify-charges { margin: .75rem 0; padding: 0 .75rem;
   border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .verify-charges ol { margin: 0; padding: 0; list-style-type: none; }
 .verify-charges li { display: flex; justify-content: space-between; gap: .55rem; align-items: baseline;
   padding: .5rem 0; font-size: .86rem; }
 .verify-charges li + li { border-top: 1px solid var(--line); }
+.verify-charges details { border-top: 1px solid var(--line); }
+.verify-charges summary { cursor: pointer; color: var(--accent); padding: .65rem 0; font-size: .87rem; font-weight: 650; }
 .verify-charges strong { color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .parsecheck .primary { color: var(--surface); }
 #dropzone .linkbtn:not(.hidden) { display: inline-block; margin: .65rem .45rem 0; }

@@ -68,7 +68,13 @@
     <div id="parsecheck" class="parsecheck hidden">
       <strong id="verify-heading">Check the amounts match your receipt.</strong>
       <p id="parsecheckbody"></p>
-      <div id="verify-photos" class="verify-charges" tabindex="0" aria-labelledby="verify-heading"></div>
+      <div id="verify-photos" class="verify-charges" tabindex="0" aria-labelledby="verify-heading">
+        <ol id="verify-first"></ol>
+        <details id="verify-more" class="hidden">
+          <summary id="verify-more-label">Show more charges</summary>
+          <ol id="verify-rest" start="9"></ol>
+        </details>
+      </div>
       <div class="controls">
         <button id="confirmlines" type="button" class="primary">Amounts match</button>
         <button id="rejectlines" type="button" class="secondary">Something is off</button>

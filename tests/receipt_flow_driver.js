@@ -66,7 +66,7 @@ async function main() {
   assert(element('#outcome').classList.contains('hidden'));
   assert(element('#download').disabled && element('#print').disabled);
   assert.equal(run('lastFindings.length'),0);
-  assert.match(element('#verify-photos').innerHTML,/180.00/);
+  assert.match(element('#verify-first').innerHTML,/180.00/);
   hit('confirmlines');
   assert(!element('#download').disabled);
   assert.match(element('#outcome').innerHTML,/A charge appears twice/);
@@ -83,6 +83,24 @@ async function main() {
   run('resetReview(); restore(); runAudit();');
   assert(element('#outcome').classList.contains('hidden'));
   assert(element('#download').disabled);
+
+  const long = filename('long.png','image/png','test adapter placeholder');
+  env.newFile = long;
+  const longReading = run('handleFile(newFile)');
+  jobs.get(long.name).resolve(Array.from({length: 10}, (_, i) =>
+    `J1885 TEST CHARGE ${i} 180.00`).join('\n'));
+  await longReading;
+  assert.equal((element('#verify-first').innerHTML.match(/<li>/g) || []).length, 8);
+  assert.equal((element('#verify-rest').innerHTML.match(/<li>/g) || []).length, 2);
+  assert.match(element('#verify-more-label').textContent,/2 more charges/);
+  assert(element('#confirmlines').disabled);
+  hit('confirmlines');
+  assert(element('#download').disabled);
+  element('#verify-more').open = true;
+  element('#verify-more').event('toggle');
+  assert.equal(element('#confirmlines').textContent,'All 10 amounts match');
+  hit('confirmlines');
+  assert(!element('#download').disabled);
 
   const late = filename('late.png','image/png','old');
   env.newFile = late;

@@ -48,6 +48,7 @@ function resetReview() {
   lastLines = []; lastFindings = []; lastCtx = null;
   linesConfirmed = false;
   hasReview = false; replacing = false; verificationRequested = false;
+  $('#verify-more').open = false;
   $('#results').classList.add('hidden');
   $('#letterbox').classList.add('hidden');
   $('#lettertext').value = '';
@@ -211,15 +212,43 @@ function isTentative(lines) {
   return source === 'photo' || lines.some((line) => line.suspect_columns);
 }
 
+const VERIFY_INLINE_ROWS = 8;
+function syncVerifyButton() {
+  const more = $('#verify-more');
+  const allShown = more.classList.contains('hidden') || more.open;
+  const count = lastLines.length;
+  const button = $('#confirmlines');
+  button.disabled = !allShown;
+  button.textContent = !allShown ? `Show all ${count} charges first`
+    : count === 1 ? 'This amount matches' : `All ${count} amounts match`;
+}
+
 function renderParseCheck(lines) {
   const needsCheck = !linesConfirmed && (verificationRequested || isTentative(lines));
   $('#parsecheck').classList.toggle('hidden', !needsCheck);
-  if (!needsCheck) { $('#verify-photos').replaceChildren(); return; }
+  const first = $('#verify-first'), rest = $('#verify-rest'), more = $('#verify-more');
+  if (!needsCheck) {
+    first.replaceChildren();
+    rest.replaceChildren();
+    more.open = false;
+    return;
+  }
   $('#parsecheckbody').textContent = source === 'photo'
     ? 'Photo reading can miss a line or get a number wrong. Compare these charges with the original to finish.'
     : 'Compare these charges with the original before using or sharing the review.';
-  $('#verify-photos').innerHTML = '<ol>' + lines.map((line) =>
-    `<li><span>${esc(readableDescription(line))}</span><strong>${esc(fmt(line.charge))}</strong></li>`).join('') + '</ol>';
+  const rows = lines.map((line) =>
+    `<li><span>${esc(readableDescription(line))}</span><strong>${esc(fmt(line.charge))}</strong></li>`);
+  first.innerHTML = rows.slice(0, VERIFY_INLINE_ROWS).join('');
+  rest.innerHTML = rows.slice(VERIFY_INLINE_ROWS).join('');
+  rest.start = VERIFY_INLINE_ROWS + 1;
+  const remaining = lines.length - VERIFY_INLINE_ROWS;
+  more.classList.toggle('hidden', remaining <= 0);
+  if (remaining > 0) {
+    $('#verify-more-label').textContent = `Show ${remaining} more charge${remaining === 1 ? '' : 's'}`;
+  } else {
+    more.open = false;
+  }
+  syncVerifyButton();
 }
 
 function renderOutcome(lines, findings, ctx) {
@@ -701,8 +730,9 @@ $('#exportverify').addEventListener('click', () => {
   renderParseCheck(lastLines);
   $('#verify-photos').focus();
 });
+$('#verify-more').addEventListener('toggle', syncVerifyButton);
 $('#confirmlines').addEventListener('click', () => {
-  if (!lastLines.length || $('#parsecheck').classList.contains('hidden')) return;
+  if ($('#confirmlines').disabled || !lastLines.length || $('#parsecheck').classList.contains('hidden')) return;
   linesConfirmed = true;
   verificationRequested = false;
   runAudit();
