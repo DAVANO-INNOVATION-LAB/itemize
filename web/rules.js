@@ -454,7 +454,7 @@
       && /^(?:qty|quantity|units)$/.test(cells.at(-4))
       && /^(?:unit )?price$/.test(cells.at(-3))
       && /^discounts?$/.test(cells.at(-2)) && /^(?:line )?total$/.test(cells.at(-1));
-    return valid ? cells.at(-3) : '';
+    return valid ? {priceLabel:cells.at(-3), hasReference:cells.length === 6} : null;
   }
 
   function receiptFooter(s) {
@@ -462,7 +462,7 @@
       || /^(?:paid|due|(?:sales\s+)?tax|total|paid\s+amount|amount\s+paid)\s*[:=]?\s*(?:\$|[0-9]|$)/i.test(s);
   }
 
-  function receiptLine(s, idx, priceLabel) {
+  function receiptLine(s, idx, layout) {
     let left = normalizeMoney(s);
     const amounts = [];
     while (amounts.length < 3) {
@@ -480,15 +480,17 @@
     const discount = last === undefined ? 0 : Math.abs(next);
     const grouped = left.slice(0, q.index).trimEnd().split(/\s{2,}/);
     const desc = grouped[0];
+    const ref = layout.hasReference && grouped.length === 2 && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,39}$/.test(grouped[1])
+      ? grouped[1] : '';
     const cents = n => Math.round(n * 100);
     // Plain Price may be either per unit or already extended by quantity.
     // Never infer a per-unit amount or apply this check outside this table.
     const matches = n => Math.abs(cents(n) - cents(discount) - cents(charge)) <= 1;
     if (grouped.length > 2 || !/[A-Za-z]{2}/.test(desc) || metadata(desc)
         || /\$/.test(desc) || !units || price < 0 || charge < 0
-        || !(matches(units * price) || (priceLabel === 'price' && matches(price)))) return null;
+        || !(matches(units * price) || (layout.priceLabel === 'price' && matches(price)))) return null;
     return {
-      idx, code:'', desc:desc.slice(0,160), units, charge, date:'',
+      idx, code:'', desc:desc.slice(0,160), units, charge, date:'', receipt_reference:ref,
       modifiers:[], revenue_code:'', unit_price:0, ndc:'', suspect_columns:false,
     };
   }
@@ -502,8 +504,8 @@
       rawCount += 1;
       const parts = s.split(/\s{2,}/);
       const cols = parts.length > 1 ? mapHeaders(parts) : {};
-      const priceLabel = receiptHeader(parts);
-      if (priceLabel) { receipt = priceLabel; closedReceipt = false; header = undefined; ignored += 1; continue; }
+      const receiptLayout = receiptHeader(parts);
+      if (receiptLayout) { receipt = receiptLayout; closedReceipt = false; header = undefined; ignored += 1; continue; }
       if (billHeader(cols)) { receipt = false; closedReceipt = false; header = [parts.length, cols]; ignored += 1; continue; }
       if (receipt && receiptFooter(s)) { closedReceipt = true; ignored += 1; continue; }
       if (metadata(s)) { ignored += 1; continue; }
@@ -608,8 +610,12 @@
     for (const l of lines) {
       if (!l.code && !(l.desc || '').trim()) continue;
       const code = (l.code || '').toUpperCase();
+      // A receipt item reference is not a clinical code. Do not claim a
+      // repeated receipt charge unless the printed references match.
+      const ref = l.receipt_reference ?? null;
+      if (ref === '') continue;
       const descriptionKey = code ? '' : (l.desc || '').trim().replace(/\s+/g, ' ').toLowerCase();
-      const k = JSON.stringify([code, (l.date || '').trim(), l.charge.toFixed(2), g(l.units), descriptionKey]);
+      const k = JSON.stringify([code, (l.date || '').trim(), l.charge.toFixed(2), g(l.units), descriptionKey, ref]);
       (groups[k] = groups[k] || []).push(l);
     }
     const out = [];

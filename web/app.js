@@ -20,6 +20,7 @@ let lastLines = [], lastFindings = [], lastCtx = null, eobRows = null;
 let linesConfirmed = false;
 let source = 'manual', fileRequest = null, retryFile = null;
 let replacing = false, hasReview = false, verificationRequested = false;
+let chargeOverrides = new Map(), chargeDraft = null, activeCharge = null;
 
 function showStage(stage) {
   const reviewing = stage === 'review';
@@ -49,6 +50,8 @@ function resetReview() {
   linesConfirmed = false;
   hasReview = false; replacing = false; verificationRequested = false;
   $('#verify-more').open = false;
+  chargeOverrides = new Map();
+  closeChargeEditor();
   closeRecovery();
   $('#results').classList.add('hidden');
   $('#letterbox').classList.add('hidden');
@@ -213,7 +216,7 @@ function readableDescription(line) {
 }
 
 function isTentative(lines) {
-  return ['photo', 'corrected'].includes(source) || lines.some((line) => line.suspect_columns);
+  return chargeOverrides.size > 0 || ['photo', 'corrected'].includes(source) || lines.some((line) => line.suspect_columns);
 }
 
 const VERIFY_INLINE_ROWS = 8;
@@ -231,14 +234,18 @@ function renderParseCheck(lines) {
   const needsCheck = !linesConfirmed && (verificationRequested || isTentative(lines));
   $('#parsecheck').classList.toggle('hidden', !needsCheck);
   const first = $('#verify-first'), rest = $('#verify-rest'), more = $('#verify-more');
+  $('#verify-photos').classList.toggle('hidden', Boolean(chargeDraft));
+  $('#verify-actions').classList.toggle('hidden', Boolean(chargeDraft));
   if (!needsCheck) {
     first.replaceChildren();
     rest.replaceChildren();
     more.open = false;
     return;
   }
-  $('#parsecheckbody').textContent = source === 'photo'
-    ? 'Photo reading can miss a line or get a number wrong. Compare these charges with the original to finish.'
+  $('#parsecheckbody').textContent = chargeDraft
+    ? 'Corrections don’t affect the review until you confirm them.'
+    : chargeOverrides.size ? 'Check the corrected amounts against your receipt before continuing.'
+    : source === 'photo' ? 'Photo reading can miss a line or get a number wrong. Compare these charges with the original to finish.'
     : 'Compare these charges with the original before using or sharing the review.';
   const rows = lines.map((line) =>
     `<li><span>${esc(readableDescription(line))}</span><strong>${esc(fmt(line.charge))}</strong></li>`);
@@ -255,13 +262,112 @@ function renderParseCheck(lines) {
   syncVerifyButton();
 }
 
+function applyChargeEdits(lines, edits) {
+  return lines.map((line) => edits.has(line.idx) ? { ...line, ...edits.get(line.idx) } : line);
+}
+
+function closeChargeEditor() {
+  chargeDraft = null;
+  activeCharge = null;
+  $('#charge-editor').classList.add('hidden');
+  $('#editable-charges').replaceChildren();
+  $('#charge-editor-status').textContent = '';
+}
+
+function openChargeEditor() {
+  if (!lastLines.length || linesConfirmed || chargeDraft) return;
+  chargeDraft = new Map(chargeOverrides);
+  activeCharge = null;
+  renderParseCheck(lastLines);
+  $('#charge-editor').classList.remove('hidden');
+  renderChargeEditor();
+  $('#charge-editor-heading').focus();
+}
+
+function renderChargeEditor() {
+  if (!chargeDraft) return;
+  $('#finish-charge-edit').disabled = activeCharge !== null;
+  $('#editable-charges').innerHTML = applyChargeEdits(lastLines, chargeDraft).map((line) => {
+    const name = readableDescription(line);
+    if (activeCharge !== line.idx) {
+      return `<li class="editable-charge"><span>${esc(name)}${chargeDraft.has(line.idx) ? ' <small>Edited</small>' : ''}</span>`
+        + `<strong>${esc(fmt(line.charge))}</strong><button type="button" class="secondary" data-edit-charge="${line.idx}"`
+        + ` aria-label="Edit charge ${line.idx}: ${esc(name)}"${activeCharge !== null ? ' disabled' : ''}>Edit</button></li>`;
+    }
+    return `<li class="editable-charge editing"><div class="charge-edit-fields">`
+      + `<label for="charge-edit-description">Description</label><input id="charge-edit-description" type="text" maxlength="160" value="${esc(line.desc || '')}" autocomplete="off">`
+      + `<label for="charge-edit-amount">Amount in dollars</label><input id="charge-edit-amount" type="text" inputmode="decimal" value="${line.charge.toFixed(2)}" autocomplete="off">`
+      + '<p id="charge-edit-error" class="hint" role="alert"></p><div class="controls">'
+      + '<button type="button" data-save-charge>Save this charge</button>'
+      + '<button type="button" class="secondary" data-cancel-charge>Cancel this change</button></div></div></li>';
+  }).join('');
+}
+
+function beginChargeEdit(index) {
+  if (!chargeDraft || activeCharge !== null || !lastLines.some((line) => line.idx === index)) return;
+  activeCharge = index;
+  $('#charge-editor-status').textContent = '';
+  renderChargeEditor();
+  $('#charge-edit-description').focus();
+}
+
+function focusEditButton(index) {
+  $(`button[data-edit-charge="${index}"]`)?.focus();
+}
+
+function saveChargeEdit() {
+  if (!chargeDraft || activeCharge === null) return;
+  const desc = $('#charge-edit-description').value.trim();
+  const raw = $('#charge-edit-amount').value.trim();
+  if (!desc || desc.length > 160) {
+    $('#charge-edit-error').textContent = 'Enter a description of 1 to 160 characters.';
+    $('#charge-edit-description').focus();
+    return;
+  }
+  if (!/^-?\$?(?:[0-9]{1,9}|[0-9]{1,3}(?:,[0-9]{3}){1,2})(?:\.[0-9]{1,2})?$/.test(raw)) {
+    $('#charge-edit-error').textContent = 'Enter a dollar amount like 25.00. Use a minus sign for a credit.';
+    $('#charge-edit-amount').focus();
+    return;
+  }
+  const charge = Number(raw.replace(/[,$]/g, ''));
+  const index = activeCharge;
+  chargeDraft.set(index, { desc, charge });
+  activeCharge = null;
+  renderChargeEditor();
+  focusEditButton(index);
+  $('#charge-editor-status').textContent = 'Charge saved. Confirm your corrections when you’re done.';
+}
+
+function cancelChargeEdit() {
+  if (activeCharge === null) return;
+  const index = activeCharge;
+  activeCharge = null;
+  renderChargeEditor();
+  focusEditButton(index);
+  $('#charge-editor-status').textContent = 'This charge was not changed.';
+}
+
+function finishChargeEditor(apply) {
+  if (!chargeDraft || (apply && activeCharge !== null)) return;
+  if (apply) {
+    chargeOverrides = chargeDraft;
+    linesConfirmed = false;
+    verificationRequested = true;
+  }
+  closeChargeEditor();
+  if (apply) runAudit();
+  else renderParseCheck(lastLines);
+  $('#verify-photos').focus();
+}
+
 function renderOutcome(lines, findings, ctx, stats) {
   const card = $('#outcome');
   if (!linesConfirmed && isTentative(lines)) {
     card.classList.add('hidden');
     card.replaceChildren();
-    $('#result-title').textContent = source === 'photo'
-      ? 'Almost done. Check the photo.' : 'Almost done. Check the charges.';
+    $('#result-title').textContent = chargeOverrides.size
+      ? 'Check the corrected charges'
+      : source === 'photo' ? 'Almost done. Check the photo.' : 'Almost done. Check the charges.';
     return;
   }
   card.classList.remove('hidden');
@@ -627,7 +733,7 @@ function runAudit() {
   const text = $('#bill').value.trim();
   if (!text) { $('#bill').focus(); return; }
   const { lines, stats } = I.parseBillDetails(text);
-  lastLines = lines;
+  lastLines = applyChargeEdits(lines, chargeOverrides);
   lastCtx = readContext();
   if (!lastLines.length) {
     renderRecovery(stats);
@@ -802,18 +908,22 @@ $('#exportverify').addEventListener('click', () => {
 });
 $('#verify-more').addEventListener('toggle', syncVerifyButton);
 $('#confirmlines').addEventListener('click', () => {
-  if ($('#confirmlines').disabled || !lastLines.length || $('#parsecheck').classList.contains('hidden')) return;
+  if (chargeDraft || $('#confirmlines').disabled || !lastLines.length || $('#parsecheck').classList.contains('hidden')) return;
   linesConfirmed = true;
   verificationRequested = false;
   runAudit();
   focusResult();
 });
-$('#rejectlines').addEventListener('click', () => {
-  linesConfirmed = false;
-  setDownloadEnabled(false);
-  returnToIntake();
-  status('Try another photo or choose a text PDF. You can also edit the extracted text.', 'warn');
+$('#rejectlines').addEventListener('click', openChargeEditor);
+$('#editable-charges').addEventListener('click', (event) => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  if (button.hasAttribute('data-edit-charge')) beginChargeEdit(Number(button.dataset.editCharge));
+  else if (button.hasAttribute('data-save-charge')) saveChargeEdit();
+  else if (button.hasAttribute('data-cancel-charge')) cancelChargeEdit();
 });
+$('#finish-charge-edit').addEventListener('click', () => finishChargeEditor(true));
+$('#discard-charge-edit').addEventListener('click', () => finishChargeEditor(false));
 
 $('#clear').addEventListener('click', () => {
   cancelFile(false);

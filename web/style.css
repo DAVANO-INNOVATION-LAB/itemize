@@ -145,6 +145,20 @@ footer { margin-top: 23px; text-align: center; color: var(--muted); font-size: .
 .verify-charges li + li, .verify-charges details { border-top: 1px solid #f1e9e8; }
 .verify-charges summary { color: var(--deep); padding: 7px 0; font-size: .85rem; font-weight: 740; }
 .verify-charges strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.charge-editor { margin-top: 12px; }
+.charge-editor h3 { margin: 0; font-size: 1.2rem; }
+.editable-charges { margin: 12px 0 0; padding: 0; list-style: none; }
+.editable-charge { display: grid; grid-template-columns: minmax(0,1fr) max-content max-content; gap: 8px 12px;
+  align-items: center; padding: 7px 0; border-top: 1px solid var(--edge); font-size: .87rem; overflow-wrap: anywhere; }
+.editable-charge small { color: var(--violet); }
+.editable-charge strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.editable-charge.editing { grid-template-columns: minmax(0,1fr); }
+.charge-edit-fields { background: var(--white); border: 1px solid var(--edge); border-radius: 12px; padding: 12px; }
+.charge-edit-fields label { display: block; margin-bottom: 4px; font-weight: 700; }
+.charge-edit-fields input { width: 100%; min-height: 44px; padding: 8px 10px; margin-bottom: 9px;
+  border: 1px solid var(--edge); border-radius: 8px; color: var(--ink); background: var(--white); font-size: 1rem; }
+#charge-edit-error { color: var(--red); }
+#charge-editor-status:empty, #charge-edit-error:empty { display: none; }
 .scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: .83rem; }
 th,td { text-align: left; border-bottom: 1px solid var(--edge); padding: .36rem .45rem; }

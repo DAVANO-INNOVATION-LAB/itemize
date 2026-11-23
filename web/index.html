@@ -114,10 +114,20 @@
           <ol id="verify-rest" start="9"></ol>
         </details>
       </div>
-      <div class="controls">
+      <div id="verify-actions" class="controls">
         <button id="confirmlines" type="button" class="primary">Amounts match</button>
         <button id="rejectlines" type="button" class="secondary">Something is off</button>
       </div>
+      <section id="charge-editor" class="charge-editor hidden" aria-labelledby="charge-editor-heading">
+        <h3 id="charge-editor-heading" tabindex="-1">Correct the charges</h3>
+        <p class="hint">Use your original receipt to correct a description or amount. Edits stay in this tab and don’t change the original.</p>
+        <ol id="editable-charges" class="editable-charges"></ol>
+        <p id="charge-editor-status" class="hint" role="status"></p>
+        <div class="controls">
+          <button id="finish-charge-edit" type="button">Review corrections</button>
+          <button id="discard-charge-edit" type="button" class="secondary">Cancel editing</button>
+        </div>
+      </section>
     </div>
     <div id="outcome" class="outcome"></div>
     <p id="reading-note" class="reading-note hidden"></p>
@@ -254,7 +264,7 @@
   <label><input type="checkbox" id="keep"> Keep a working copy of this bill on this device</label>
   <p class="hint small">Off by default. When on, the text you pasted and the answers above
   are stored in this browser only — never sent anywhere — so a refresh does not lose your
-  work. On a shared or public computer, leave this off.
+  work. Charge corrections aren’t saved across a reload. On a shared or public computer, leave this off.
   <button id="forget" class="linkbtn">Delete the stored copy now</button></p>
   <p id="keepstatus" class="filestatus" role="status" aria-live="polite"></p>
 </div>

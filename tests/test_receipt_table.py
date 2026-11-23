@@ -100,3 +100,40 @@ process.stdout.write(JSON.stringify([I.parseBill(text).map(x=>x.charge),I.parseB
             node = subprocess.run(["node", "-e", script], cwd=ROOT, input=body,
                                   text=True, capture_output=True, check=True, timeout=15)
             self.assertEqual(json.loads(node.stdout), [[7.20, 20.00], []])
+
+    @unittest.skipUnless(shutil.which("node"), "node required for browser parser parity")
+    def test_receipt_duplicates_require_same_readable_reference(self):
+        from itemize.rules import rule_exact_duplicates
+
+        receipt = ("Description  Procedure  Qty  Price  Discount  Total\n"
+                   "Consultation  99212  1  $4.00  $4.00\n"
+                   "Consultation  99213  1  $4.00  $4.00\n"
+                   "Consultation  99212  1  $4.00  $4.00\n"
+                   "Consultation  1  $4.00  $4.00\n"
+                   "Consultation  1  $4.00  $4.00")
+        clinical = ("Description  Code  Charge\n"
+                    "Consultation  99212  $4.00\n"
+                    "Consultation  99212  $4.00")
+        expected = [{"reference": ["99212", "99213", "99212", "", ""],
+                     "codes": ["", "", "", "", ""], "duplicates": [[1, 3]]},
+                    {"reference": [None, None], "codes": ["99212", "99212"],
+                     "duplicates": [[1, 2]]}]
+        actual = []
+        for doc in (receipt, clinical):
+            lines, _ = parse_details(doc)
+            actual.append({"reference": [line.receipt_reference for line in lines],
+                           "codes": [line.code for line in lines],
+                           "duplicates": [item.lines for item in rule_exact_duplicates(lines, None)]})
+        self.assertEqual(actual, expected)
+        script = r"""
+const I = require('./web/rules.js'),fs = require('fs');
+const docs = JSON.parse(fs.readFileSync(0,'utf8'));
+process.stdout.write(JSON.stringify(docs.map(doc => {
+  const lines = I.parseBill(doc);
+  return {reference:lines.map(x=>x.receipt_reference ?? null), codes:lines.map(x=>x.code),
+          duplicates:I.audit(lines,new I.Reference({})).filter(f=>f.rule==='exact_duplicate').map(f=>f.lines)};
+})));
+"""
+        node = subprocess.run(["node", "-e", script], cwd=ROOT, input=json.dumps([receipt, clinical]),
+                              text=True, capture_output=True, check=True, timeout=15)
+        self.assertEqual(json.loads(node.stdout), expected)

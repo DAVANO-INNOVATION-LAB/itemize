@@ -185,6 +185,79 @@ async function main() {
   assert(element('#download').disabled);
   hit('confirmlines');
   assert(!element('#download').disabled);
+  const editPhoto = filename('synthetic-edit.png','image/png','synthetic photo placeholder');
+  const originalEditText = 'J1885 SYNTHETIC EXAM 1 18.00\nJ1885 SYNTHETIC EXAM 1 18.00';
+  env.newFile = editPhoto;
+  const editReading = run('handleFile(newFile)');
+  jobs.get(editPhoto.name).resolve(originalEditText);
+  await editReading;
+  const chargeClick = (attr, index) => element('#editable-charges').event('click', {
+    target: {closest: () => ({hasAttribute: (name) => name === attr, dataset: {editCharge: String(index)}})},
+  });
+  const editFirst = () => chargeClick('data-edit-charge', 1);
+  const saveFirst = () => chargeClick('data-save-charge', 1);
+  hit('rejectlines');
+  assert(!element('#charge-editor').classList.contains('hidden'));
+  assert(element('#dropzone').classList.contains('hidden'));
+  assert(element('#verify-actions').classList.contains('hidden'));
+  editFirst();
+  element('#charge-edit-description').value = '';
+  element('#charge-edit-amount').value = '8.00';
+  saveFirst();
+  assert.match(element('#charge-edit-error').textContent,/Enter a description/);
+  element('#charge-edit-description').value = 'SYNTHETIC EXAM';
+  for (const value of ['', 'not money']) {
+    element('#charge-edit-amount').value = value;
+    saveFirst();
+    assert.match(element('#charge-edit-error').textContent,/Enter a dollar amount/);
+    assert.equal(run('chargeDraft.size'), 0);
+    assert.equal(run('lastLines[0].charge'), 18);
+  }
+  element('#charge-edit-amount').value = '8.00';
+  saveFirst();
+  assert.match(element('#editable-charges').innerHTML,/\$8\.00/);
+  hit('discard-charge-edit');
+  assert.equal(run('lastLines[0].charge'), 18);
+  assert(!element('#verify-actions').classList.contains('hidden'));
+  assert(element('#charge-editor').classList.contains('hidden'));
+
+  hit('rejectlines');
+  editFirst();
+  element('#charge-edit-description').value = 'unsaved draft';
+  element('#charge-edit-amount').value = '4.00';
+  chargeClick('data-cancel-charge', 1);
+  assert.equal(run('chargeDraft.size'), 0);
+  assert(!element('#editable-charges').innerHTML.includes('unsaved draft'));
+  editFirst();
+  element('#charge-edit-description').value = 'SYNTHETIC CORRECTED EXAM';
+  element('#charge-edit-amount').value = '8.00';
+  saveFirst();
+  hit('finish-charge-edit');
+  assert.equal(run('lastLines[0].charge'), 8);
+  assert.match(element('#verify-first').innerHTML,/SYNTHETIC CORRECTED EXAM/);
+  assert.equal(run('lastFindings.length'), 0);
+  assert(element('#download').disabled);
+  assert.equal(element('#bill').value, originalEditText);
+  hit('confirmlines');
+  assert(!element('#download').disabled);
+  assert(!run("lastFindings.some(f => f.rule === 'exact_duplicate')"));
+  assert.equal(JSON.parse(stored.get('itemize.draft.v1')).bill, originalEditText);
+  assert(!Object.hasOwn(JSON.parse(stored.get('itemize.draft.v1')), 'chargeOverrides'));
+
+  hit('reviewagain');
+  env.newFile = editPhoto;
+  const rereading = run('handleFile(newFile)');
+  jobs.get(editPhoto.name).resolve(originalEditText);
+  await rereading;
+  assert.equal(run('chargeOverrides.size'), 0);
+  assert.equal(run('lastLines[0].charge'), 18);
+  hit('confirmlines');
+  assert(run("lastFindings.some(f => f.rule === 'exact_duplicate')"));
+  hit('clear');
+  assert.equal(run('chargeOverrides.size'), 0);
+  assert.equal(element('#bill').value, '');
+  assert(element('#results').classList.contains('hidden'));
+
   assert(requests.every(r=>!r.options?.body && (!r.options?.method || r.options.method==='HEAD')));
   console.log('Passed: photo guard, confirmation, restoring OCR guard, cancellation, replacing/keeping a result, native PDF extraction, total-only receipt, and no request bodies.');
 

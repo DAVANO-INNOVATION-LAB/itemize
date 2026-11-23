@@ -114,6 +114,9 @@ class Line:
     # as $1.00 -- silently, and wrong by three orders of magnitude.
     suspect_columns: bool = False
     raw: str = ""
+    # None for a clinical bill, empty when a receipt reference could not be read.
+    # Never interpret a receipt catalog reference as a medical code.
+    receipt_reference: str | None = None
 
     @property
     def unit_charge(self):

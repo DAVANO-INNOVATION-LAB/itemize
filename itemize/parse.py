@@ -348,7 +348,7 @@ def _receipt_header(parts):
             and re.fullmatch(r"(?:unit )?price", cells[-3])
             and re.fullmatch(r"discounts?", cells[-2])
             and re.fullmatch(r"(?:line )?total", cells[-1]))
-    return cells[-3] if valid else ""
+    return (cells[-3], len(cells) == 6) if valid else None
 
 
 def _receipt_footer(s):
@@ -358,7 +358,8 @@ def _receipt_footer(s):
                             r"\s*[:=]?\s*(?:\$|[0-9]|$)", s, re.I))
 
 
-def _receipt_line(s, idx, price_label):
+def _receipt_line(s, idx, layout):
+    price_label, has_reference = layout
     left = _normalize_money(s)
     amounts = []
     while len(amounts) < 3:
@@ -376,6 +377,8 @@ def _receipt_line(s, idx, price_label):
     discount = abs(amounts[1]) if len(amounts) == 3 else 0
     grouped = re.split(r"\s{2,}", left[:q.start()].rstrip())
     desc = grouped[0]
+    reference = (grouped[1] if has_reference and len(grouped) == 2
+                 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,39}", grouped[1]) else "")
     cents = lambda n: math.floor(n * 100 + 0.5)
     # Plain Price may be per unit or already extended by quantity.
     matches = lambda n: abs(cents(n) - cents(discount) - cents(charge)) <= 1
@@ -384,7 +387,8 @@ def _receipt_line(s, idx, price_label):
             or not (matches(units * price) or (price_label == "price" and matches(price)))):
         return None
     # Do not treat a receipt's SKU or its pre-discount unit price as medical evidence.
-    return Line(idx=idx, code="", desc=desc[:160], units=units, charge=charge, raw=s[:300])
+    return Line(idx=idx, code="", desc=desc[:160], units=units, charge=charge, raw=s[:300],
+                receipt_reference=reference)
 
 
 def parse_text(text, stats=None):
@@ -400,9 +404,9 @@ def parse_text(text, stats=None):
         raw_count += 1
         parts = re.split(r"\s{2,}", s)
         cols = _map_headers(parts) if len(parts) > 1 else {}
-        price_label = _receipt_header(parts)
-        if price_label:
-            receipt = price_label
+        receipt_layout = _receipt_header(parts)
+        if receipt_layout:
+            receipt = receipt_layout
             closed_receipt = False
             header = None
             ignored += 1
