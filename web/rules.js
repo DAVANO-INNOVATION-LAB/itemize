@@ -223,7 +223,7 @@
       'detail', 'charge description'],
     units: ['units', 'unit', 'qty', 'quantity', 'svc units', 'days/units'],
     charge: ['charge', 'charges', 'amount', 'billed', 'billed amount', 'total',
-      'total charges', 'line total', 'amt'],
+      'total charges', 'line total', 'amt', 'provider charges', 'gross charges', 'charge amount'],
     date: ['date', 'service date', 'date of service', 'dos', 'svc date'],
     modifiers: ['modifier', 'modifiers', 'mod'],
     revenue_code: ['revenue code', 'rev code', 'rev cd', 'revcode'],
@@ -291,15 +291,8 @@
   function mapHeaders(header) {
     const out = {};
     header.forEach((h, i) => {
-      const k = (h || '').trim().toLowerCase();
+      const k = (h || '').trim().toLowerCase().replace(/\s*\(usd\)$/, '');
       for (const f in ALIASES) if (!(f in out) && ALIASES[f].includes(k)) { out[f] = i; return; }
-    });
-    header.forEach((h, i) => {
-      const k = (h || '').trim().toLowerCase();
-      for (const f in ALIASES) {
-        if (f in out) continue;
-        if (ALIASES[f].some((n) => k.includes(n))) { out[f] = i; return; }
-      }
     });
     return out;
   }
@@ -309,20 +302,23 @@
     // engines replace it with a SPACE before parsing. Dropping the byte instead
     // would leave them reading "nulbyte" and "nul byte" for the same input.
     text = text.replace(/\u0000/g, ' ');
-    const first = (text.split('\n').find((l) => l.trim()) || '');
-    if (!first) return [];
-    const delim = [',', '\t', '|', ';']
-      .map((d) => [d, (first.match(new RegExp(`\\${d}`, 'g')) || []).length])
-      .sort((a, b) => b[1] - a[1])[0][0];
-
-    // Empty rows are dropped AFTER tokenising, exactly as csv.reader + the
-    // Python filter do; dropping them first would break multi-line fields.
+    // Choose a delimiter from a real header, not a comma in the address.
+    let delim;
+    outer: for (const raw of text.split('\n').slice(0, 25)) {
+      for (const d of [',', '\t', '|', ';']) {
+        if (raw.includes(d) && billHeader(mapHeaders(parseRows(raw, d)[0] || []))) {
+          delim = d;
+          break outer;
+        }
+      }
+    }
+    if (!delim) return [];
     const rows = parseRows(text, delim).filter((r) => r.some((c) => c.trim()));
     if (!rows.length) return [];
     let hdrI = -1, cols = {};
     for (let i = 0; i < Math.min(rows.length, 25); i++) {
       const m = mapHeaders(rows[i]);
-      if ('charge' in m && ('code' in m || 'desc' in m)) { hdrI = i; cols = m; break; }
+      if (billHeader(m)) { hdrI = i; cols = m; break; }
     }
     if (hdrI < 0) return [];
 
@@ -332,13 +328,17 @@
     for (let i = hdrI + 1; i < rows.length; i++) {
       const row = rows[i];
       const g = (f) => (cols[f] != null && cols[f] < row.length ? row[cols[f]].trim() : '');
-      const code = clean(g('code')).toUpperCase(), desc = clean(g('desc')), chargeRaw = g('charge');
+      const code = clean(g('code')).toUpperCase(), desc = clean(g('desc'));
+      const chargeRaw = normalizeMoney(g('charge'));
       if (!chargeRaw && !code && !desc) continue;
       if (!code && (metadata(desc) || /^balance\b/i.test(desc))) {
         if (stats) stats.ignored += 1;
         continue;
       }
-      if (chargeRaw && !RE_MONEY_FIELD.test(chargeRaw)) continue;
+      if (!RE_MONEY_FIELD.test(chargeRaw) || !(code || desc)) {
+        if (chargeRaw && stats) stats.uncertain = (stats.uncertain || 0) + 1;
+        continue;
+      }
       lines.push({
         idx: lines.length + 1, code, desc,
         units: num(g('units')), charge: money(chargeRaw), date: g('date'),
@@ -382,17 +382,47 @@
   const RE_STREET = /^\s*[0-9]+[A-Za-z]?(?:[-/][0-9]+)?\s+.+?\b(?:street|st\.?|avenue|ave\.?|road|rd\.?|boulevard|blvd\.?|drive|dr\.?|lane|ln\.?|way|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|terrace|ter\.?|highway|hwy\.?)(?=\s|,|\.|$)/i;
   const RE_POSTAL = /^[A-Za-z][A-Za-z .'-]*,?\s+(?:AL|AK|AZ|AR|CA|CO|CT|DE|DC|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|AS|GU|MP|PR|VI|AA|AE|AP)\s+[0-9]{5}(?:-[0-9]{4})?$/i;
   const RE_METADATA = /^(?:subtotal\b|grand\s+total\b|total(?:\s+(?:charges?|billed|amount|due|payments?|credits?|balance)\b|\s*[:$]|\s+[0-9]|$)|(?:balance|amount)\s+due\b|(?:statement|current|previous|remaining|new|patient)\s+balance\b|(?:patient\s+)?(?:account|member|policy|claim|invoice|reference|statement|visit|record)\s*(?:number\b|no\.?\b|id\b|#|:|[0-9])|(?:patient name|address|billing address|mailing address|date of birth|dob|mrn|phone|fax)\s*(?::|#|\b)|(?:statement date|invoice date|date printed|page\s+[0-9]+)\b|(?:p\.?\s*o\.?\s+box|suite|ste\.?|apt\.?|apartment|unit|floor)\s*[#:]*\s*[0-9]|(?:date(?: of service)?\s+)?(?:cpt\s+|code\s+)?(?:description|service description)\s+(?:(?:qty|quantity|units)\s+)?(?:charge[s]?|amount)\b)/i;
+  function billHeader(m) {
+    return 'charge' in m && ['code','desc'].some(k => k in m && m[k] !== m.charge);
+  }
+
+  function normalizeMoney(s) {
+    return s.replace(/−/g, '-').replace(/[\u00a0\u202f]/g, ' ').replace(/US\$/g, '$$');
+  }
+
+  function alignedLine(parts, header, idx, raw) {
+    const [width, cols] = header;
+    if (parts.length !== width) return null;
+    const val = k => k in cols ? parts[cols[k]].trim() : '';
+    const charge = normalizeMoney(val('charge'));
+    let code = val('code').toUpperCase(), desc = val('desc');
+    const date = val('date'), d = date.match(RE_DATEISH);
+    if (!code && /^(?:[0-9]{5}|[A-Za-z][0-9]{4})$/.test(desc)) {
+      code = desc.toUpperCase(); desc = '';
+    }
+    if (date && (!d || d[1] !== date)) return null;
+    if (code && !RE_CODEISH.test(code)) return null;
+    if (desc && (metadata(desc) || !/[A-Za-z]{2}/.test(desc))) return null;
+    if (!(code || desc) || !RE_MONEY_FIELD.test(charge)) return null;
+    return {
+      idx, code, desc:desc.slice(0,160), units:num(val('units')), charge:money(charge), date,
+      modifiers:[], revenue_code:'', unit_price:0, ndc:normalizeNdc(raw), suspect_columns:false,
+    };
+  }
+
   function metadata(s) {
     const date = s.match(RE_DATEISH);
     return RE_METADATA.test(s) || RE_STREET.test(s) || RE_POSTAL.test(s) || (date && date[1] === s);
   }
 
   function textLine(s, idx) {
+    s = normalizeMoney(s);
     const match = s.match(RE_CHARGE_END);
     if (!match) return null;
     const field = match[1], charge = money(field);
     if (!Number.isFinite(charge) || charge === 0) return null;
     const left = s.slice(0, s.length - field.length).trimEnd();
+    if (/(?:^|[ \t])(?:-?\$[ \t]?[0-9,]+(?:\.[0-9]{2})?|-?[0-9,]+\.[0-9]{2}|\(\$?[0-9,]+(?:\.[0-9]{2})?\))$/.test(left)) return null;
     const positional = left.split(/\s{2,}/).length >= 2;
     const dm = left.match(RE_DATEISH);
     const date = dm && dm.index === 0 ? dm[1] : '';
@@ -418,16 +448,20 @@
 
   function parseText(text, stats) {
     const lines = [];
-    let rawCount = 0, ignored = 0;
+    let rawCount = 0, ignored = 0, uncertain = 0, consumed = 0, header;
     for (const raw of text.split('\n')) {
       const s = raw.trim();
       if (!s) continue;
       rawCount += 1;
+      const parts = s.split(/\s{2,}/);
+      const cols = parts.length > 1 ? mapHeaders(parts) : {};
+      if (billHeader(cols)) { header = [parts.length, cols]; ignored += 1; continue; }
       if (metadata(s)) { ignored += 1; continue; }
-      const line = textLine(s, lines.length + 1);
-      if (line) lines.push(line);
+      const line = header ? alignedLine(parts, header, lines.length + 1, s) : textLine(s, lines.length + 1);
+      if (line) { lines.push(line); consumed += 1; }
+      else if (RE_CHARGE_END.test(normalizeMoney(s)) || (s.match(RE_DATEISH) || {}).index === 0) uncertain += 1;
     }
-    if (stats) Object.assign(stats, {mode:'text', raw:rawCount, ignored});
+    if (stats) Object.assign(stats, {mode:'text', raw:rawCount, ignored, uncertain, consumed});
     return lines;
   }
 
@@ -437,7 +471,10 @@
     let lines = parseDelimited(text, stats);
     if (!stats.mode) lines = parseText(text, stats);
     stats.parsed = lines.length;
-    stats.unread = Math.max(0, stats.raw - lines.length - stats.ignored);
+    stats.unread = Math.max(0, stats.raw - (stats.consumed ?? lines.length) - stats.ignored);
+    delete stats.consumed;
+    stats.uncertain = Math.min(stats.unread, stats.uncertain || 0);
+    stats.status = lines.length ? 'read' : !stats.raw ? 'no-text' : stats.uncertain ? 'uncertain-layout' : 'no-itemized-lines';
     return {lines, stats};
   }
 

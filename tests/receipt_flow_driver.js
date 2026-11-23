@@ -136,14 +136,36 @@ async function main() {
   assert.equal(run('lastLines.length'), 1);
   assert.equal(run('lastLines[0].charge'), 180);
   assert.match(element('#reading-note').textContent,/Left out 4 non-charge rows/);
-  assert.match(element('#reading-note').textContent,/Couldn’t read 1 other row/);
+  assert(!element('#reading-note').textContent.includes('possible charge'));
   assert(!element('#linetable tbody').innerHTML.includes('Maple Street'));
 
   env.newFile = filename('receipt.txt','text/plain','SYNTHETIC MEDICAL RECEIPT\nTOTAL $360.00');
   await run('handleFile(newFile)');
-  assert.match(element('#outcome').innerHTML,/couldn’t find individual charges/);
+  assert.match(element('#result-title').textContent,/couldn’t identify individual charges/);
+  assert.match(element('#resultstatus').textContent,/Text found.*No charges reviewed/);
+  assert(!element('#outcome').innerHTML.includes('shows a total'));
+  assert(element('#reading-note').classList.contains('hidden'));
+  run("renderRecovery({status: 'uncertain-layout'})");
+  assert.match(element('#outcome').innerHTML,/couldn’t reliably match them to amounts/);
+  assert(element('#download').disabled);
+
+  assert(!element('#read-recovery').classList.contains('hidden'));
+  assert.equal(element('#recovery-text').value, '');
+  element('#read-recovery').open = true;
+  element('#read-recovery').event('toggle');
+  assert.match(element('#recovery-text').value,/TOTAL/);
   assert(run('lastLines.length') === 0);
   assert(element('#download').disabled);
+  element('#recovery-text').value = 'Visit $125.00';
+  hit('review-corrected');
+  assert.equal(run('lastLines[0].charge'), 125);
+  assert.equal(run('lastFindings.length'), 0);
+  assert(element('#read-recovery').classList.contains('hidden'));
+  assert.equal(element('#recovery-text').value, '');
+  assert(!element('#parsecheck').classList.contains('hidden'));
+  assert(element('#download').disabled);
+  hit('confirmlines');
+  assert(!element('#download').disabled);
   assert(requests.every(r=>!r.options?.body && (!r.options?.method || r.options.method==='HEAD')));
   console.log('Passed: photo guard, confirmation, restoring OCR guard, cancellation, replacing/keeping a result, native PDF extraction, total-only receipt, and no request bodies.');
 

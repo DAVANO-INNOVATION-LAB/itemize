@@ -49,6 +49,7 @@ function resetReview() {
   linesConfirmed = false;
   hasReview = false; replacing = false; verificationRequested = false;
   $('#verify-more').open = false;
+  closeRecovery();
   $('#results').classList.add('hidden');
   $('#letterbox').classList.add('hidden');
   $('#lettertext').value = '';
@@ -124,11 +125,11 @@ function buildStateOptions(states) {
 function renderReadingNote(stats) {
   const note = $('#reading-note');
   const ignored = stats?.ignored || 0;
-  const unread = stats?.unread || 0;
+  const uncertain = stats?.uncertain || 0;
   const details = [];
   if (ignored) details.push(`Left out ${ignored} non-charge ${ignored === 1 ? 'row' : 'rows'}.`);
-  if (unread) details.push(`Couldn’t read ${unread} other ${unread === 1 ? 'row' : 'rows'} as charges. Check the original for anything we missed.`);
-  note.classList.toggle('has-unread', unread > 0);
+  if (uncertain) details.push(`Couldn’t verify ${uncertain} possible charge ${uncertain === 1 ? 'row' : 'rows'}. Check the original for any missing charges.`);
+  note.classList.toggle('has-unread', uncertain > 0);
   note.classList.toggle('hidden', details.length === 0);
   note.textContent = details.join(' ');
 }
@@ -211,7 +212,7 @@ function readableDescription(line) {
 }
 
 function isTentative(lines) {
-  return source === 'photo' || lines.some((line) => line.suspect_columns);
+  return ['photo', 'corrected'].includes(source) || lines.some((line) => line.suspect_columns);
 }
 
 const VERIFY_INLINE_ROWS = 8;
@@ -461,12 +462,12 @@ function status(msg, kind) {
 }
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const isPdf = (f) => /\.pdf$/i.test(f.name || '') || f.type === 'application/pdf';
 const isPhoto = (f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|bmp|gif|heic|heif)$/i.test(f.name);
 
 async function readFileText(f) {
   if (f.size > MAX_FILE_BYTES) throw new Error('Choose a file under 25 MB.');
-  const isPdf = /\.pdf$/i.test(f.name || '') || f.type === 'application/pdf';
-  if (isPdf) {
+  if (isPdf(f)) {
     let text;
     try { text = await PDF.extractText(await f.arrayBuffer()); }
     catch { throw new Error('We couldn’t open this PDF. Try another copy or paste the bill text.'); }
@@ -522,7 +523,7 @@ async function handleFile(f) {
     eobRows = null;
     $('#eobstatus').textContent = '';
     $('#bill').value = text;
-    source = photo ? 'photo' : 'file';
+    source = photo ? 'photo' : isPdf(f) ? 'pdf' : 'file';
     runAudit();
     focusResult();
     status('');
@@ -568,6 +569,36 @@ function confirmOverwrite(question) {
   return !$('#bill').value.trim() || window.confirm(question);
 }
 
+function closeRecovery() {
+  const section = $('#read-recovery');
+  section.open = false;
+  section.classList.add('hidden');
+  $('#recovery-text').value = '';
+  $('#recovery-status').textContent = '';
+}
+
+function renderRecovery(stats) {
+  lastFindings = [];
+  $('#result-title').textContent = 'We couldn’t identify individual charges';
+  $('#resultstatus').textContent = 'Text found · No charges reviewed';
+  const advice = source === 'photo'
+    ? 'Try a sharp photo of the full page, with every service and amount in view.'
+    : source === 'pdf'
+      ? 'If available, download an itemized PDF from your provider that lists each service and its charge.'
+      : 'Try an itemized bill that lists each service and its charge.';
+  $('#outcome').classList.remove('has-issue', 'hidden');
+  const uncertainty = stats?.status === 'uncertain-layout'
+    ? '<p>Some rows looked like charges, but we couldn’t reliably match them to amounts.</p>' : '';
+  $('#outcome').innerHTML = '<p class="outcome-label">Next step</p><h3>Try a clearer list of charges</h3>'
+    + uncertainty + `<p>${esc(advice)}</p>`;
+  for (const id of ['parsecheck', 'technical', 'charges', 'exporttools', 'reading-note']) {
+    document.getElementById(id).classList.add('hidden');
+  }
+  $('#read-recovery').classList.remove('hidden');
+  if (!replacing) showStage('review');
+  setDownloadEnabled(false);
+}
+
 /* ----------------------------------------------------------- the audit */
 function runAudit() {
   const text = $('#bill').value.trim();
@@ -576,19 +607,10 @@ function runAudit() {
   lastLines = lines;
   lastCtx = readContext();
   if (!lastLines.length) {
-    $('#result-title').textContent = 'Your receipt review';
-    $('#outcome').classList.remove('has-issue');
-    $('#outcome').innerHTML = '<p class="outcome-label">More information needed</p><h3>We couldn’t find individual charges</h3>'
-      + '<p>If this receipt only shows a total, ask your provider for a bill that lists each charge. '
-      + 'If you’re using a photo, try a clearer picture of the full page.</p>';
-    $('#outcome').classList.remove('hidden');
-    for (const id of ['parsecheck', 'technical', 'charges', 'exporttools']) document.getElementById(id).classList.add('hidden');
-    $('#resultstatus').textContent = 'No individual charges read.';
-    renderReadingNote(stats);
-    if (!replacing) showStage('review');
-    setDownloadEnabled(false);
+    renderRecovery(stats);
     return;
   }
+  closeRecovery();
   lastFindings = !linesConfirmed && isTentative(lastLines) ? [] : I.audit(lastLines, ref, lastCtx, eobRows);
   render(lastLines, lastFindings, lastCtx, stats);
   setDownloadEnabled(linesConfirmed);
@@ -648,7 +670,7 @@ function restore() {
   try { d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (err) { d = null; }
   if (!d) return false;
   $('#keep').checked = true;
-  source = d.source === 'photo' ? 'photo' : 'manual';
+  source = ['photo', 'pdf', 'corrected'].includes(d.source) ? d.source : 'manual';
   $('#bill').value = d.bill || '';
   const c = d.ctx || {};
   const setRadio = (name, val) => {
@@ -704,6 +726,25 @@ $('#cancelread').addEventListener('click', () => {
   $('#choosefile').focus();
 });
 $('#retryread').addEventListener('click', () => handleFile(retryFile));
+$('#read-recovery').addEventListener('toggle', () => {
+  if ($('#read-recovery').open && !$('#recovery-text').value) {
+    $('#recovery-text').value = $('#bill').value;
+  }
+});
+$('#review-corrected').addEventListener('click', () => {
+  const text = $('#recovery-text').value.trim();
+  if (!text) {
+    $('#recovery-status').textContent = 'Enter the text from your bill first.';
+    $('#recovery-text').focus();
+    return;
+  }
+  $('#bill').value = text;
+  source = 'corrected';
+  linesConfirmed = false;
+  runAudit();
+  if (lastLines.length) focusResult();
+  else $('#recovery-status').textContent = 'Still no individual charges identified. Check that each service has an amount.';
+});
 $('#reviewagain').addEventListener('click', returnToIntake);
 $('#backreview').addEventListener('click', () => {
   cancelFile(false); retryFile = null; requestState(false, false); status('');

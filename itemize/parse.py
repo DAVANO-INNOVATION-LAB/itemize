@@ -24,7 +24,7 @@ ALIASES = {
              "procedure", "detail", "charge description"),
     "units": ("units", "unit", "qty", "quantity", "svc units", "days/units"),
     "charge": ("charge", "charges", "amount", "billed", "billed amount",
-               "total", "total charges", "line total", "amt"),
+               "total", "total charges", "line total", "amt", "provider charges", "gross charges", "charge amount"),
     "date": ("date", "service date", "date of service", "dos", "svc date"),
     "modifiers": ("modifier", "modifiers", "mod"),
     "revenue_code": ("revenue code", "rev code", "rev cd", "revcode"),
@@ -156,20 +156,11 @@ def _denul(text):
 def _map_headers(header):
     out = {}
     for i, h in enumerate(header):
-        k = (h or "").strip().lower()
+        # Clinic exports append a currency qualifier to a known heading.
+        # A phrase such as "patient responsibility amount" is not a charge.
+        k = re.sub(r"\s*\(usd\)$", "", (h or "").strip().lower())
         for field, names in ALIASES.items():
-            if field in out:
-                continue
-            if k in names or any(k == n for n in names):
-                out[field] = i
-                break
-    # second pass: substring match for headers like "total charges (usd)"
-    for i, h in enumerate(header):
-        k = (h or "").strip().lower()
-        for field, names in ALIASES.items():
-            if field in out:
-                continue
-            if any(n in k for n in names):
+            if field not in out and k in names:
                 out[field] = i
                 break
     return out
@@ -177,12 +168,22 @@ def _map_headers(header):
 
 def parse_delimited(text, stats=None):
     text = _denul(text)
-    sample = text[:4096]
-    try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=",\t|;")
-    except csv.Error:
-        dialect = csv.excel
-    rows = [r for r in csv.reader(io.StringIO(text), dialect) if any(c.strip() for c in r)]
+    # Find a real header before choosing separators. A comma in the provider
+    # address or a tab/pipe in a title is not a document delimiter.
+    delimiter = None
+    for raw in text.split("\n")[:25]:
+        for d in (",", "\t", "|", ";"):
+            if d not in raw:
+                continue
+            row = next(csv.reader([raw], delimiter=d), [])
+            if _bill_header(_map_headers(row)):
+                delimiter = d
+                break
+        if delimiter:
+            break
+    if not delimiter:
+        return []
+    rows = [r for r in csv.reader(io.StringIO(text), delimiter=delimiter) if any(c.strip() for c in r)]
     if not rows:
         return []
 
@@ -190,7 +191,7 @@ def parse_delimited(text, stats=None):
     hdr_i, cols = None, {}
     for i, row in enumerate(rows[:25]):
         m = _map_headers(row)
-        if "charge" in m and ("code" in m or "desc" in m):
+        if _bill_header(m):
             hdr_i, cols = i, m
             break
     if hdr_i is None:
@@ -214,7 +215,10 @@ def parse_delimited(text, stats=None):
             if stats is not None:
                 stats["ignored"] += 1
             continue
-        if charge_raw and not RE_MONEY_FIELD.fullmatch(charge_raw):
+        charge_raw = _normalize_money(charge_raw)
+        if not RE_MONEY_FIELD.fullmatch(charge_raw) or not (code or desc):
+            if charge_raw and stats is not None:
+                stats["uncertain"] = stats.get("uncertain", 0) + 1
             continue
         mods = [m.strip().upper() for m in re.split(r"[,\s/]+", g("modifiers")) if m.strip()]
         lines.append(Line(
@@ -256,12 +260,43 @@ RE_METADATA = re.compile(
     r"(?:(?:qty|quantity|units)\s+)?(?:charge[s]?|amount)\b)", re.I)
 
 
+def _bill_header(m):
+    return "charge" in m and any(k in m and m[k] != m["charge"] for k in ("code", "desc"))
+
+
+def _normalize_money(text):
+    return text.replace("\u2212", "-").replace("\u00a0", " ").replace("\u202f", " ").replace("US$", "$")
+
+
+def _aligned_line(parts, header, idx, raw):
+    width, cols = header
+    if len(parts) != width:
+        return None
+    value = lambda k: parts[cols[k]].strip() if k in cols else ""
+    charge = _normalize_money(value("charge"))
+    code, desc, date = value("code").upper(), value("desc"), value("date")
+    # Several clinics label a pure code column "Procedure".
+    if not code and RE_CODE.fullmatch(desc):
+        code, desc = desc.upper(), ""
+    if date and not RE_DATE.fullmatch(date):
+        return None
+    if code and not RE_CODEISH.fullmatch(code):
+        return None
+    if desc and (_metadata(desc) or not re.search(r"[A-Za-z]{2}", desc)):
+        return None
+    if not (code or desc) or not RE_MONEY_FIELD.fullmatch(charge):
+        return None
+    return Line(idx=idx, code=code, desc=desc[:160], units=_num(value("units")),
+                charge=_money(charge), date=date, ndc=normalize_ndc(raw), raw=raw[:300])
+
+
 def _metadata(s):
     return bool(RE_METADATA.search(s) or RE_STREET.search(s) or RE_POSTAL.fullmatch(s)
                 or RE_DATE.fullmatch(s))
 
 
 def _text_line(s, idx):
+    s = _normalize_money(s)
     # PDF/OCR layout is frequently a single run-on string. Accept only a
     # trailing standalone amount and independent service-like text. A bare
     # integer additionally needs a billing code at the start (after any date).
@@ -273,6 +308,11 @@ def _text_line(s, idx):
     if not math.isfinite(charge) or charge == 0:
         return None
     left = s[:match.start(1)].rstrip()
+    # Without mapped columns, two adjacent monetary fields do not tell
+    # us which was the provider's charge (rather than allowed/owed/paid).
+    if re.search(r"(?:^|[ \t])(?:-?\$[ \t]?[0-9,]+(?:\.[0-9]{2})?|"
+                 r"-?[0-9,]+\.[0-9]{2}|\(\$?[0-9,]+(?:\.[0-9]{2})?\))$", left):
+        return None
     cols = re.split(r"\s{2,}", left)
     positional = len(cols) >= 2
     dm = RE_DATE.match(left)
@@ -302,20 +342,35 @@ def _text_line(s, idx):
 def parse_text(text, stats=None):
     """Extract plausible charges, retaining a count of ignored and unread rows."""
     lines = []
-    raw_count = ignored = 0
+    raw_count = ignored = uncertain = consumed = 0
+    header = None
     for raw in text.split("\n"):
         s = raw.strip()
         if not s:
             continue
         raw_count += 1
+        parts = re.split(r"\s{2,}", s)
+        cols = _map_headers(parts) if len(parts) > 1 else {}
+        if _bill_header(cols):
+            header = (len(parts), cols)
+            ignored += 1
+            continue
         if _metadata(s):
             ignored += 1
             continue
-        line = _text_line(s, len(lines) + 1)
+        # A multi-money statement is only safe when its layout survives and
+        # the actual charge column can be identified; never use its last cell.
+        if header:
+            line = _aligned_line(parts, header, len(lines) + 1, s)
+        else:
+            line = _text_line(s, len(lines) + 1)
         if line is not None:
             lines.append(line)
+            consumed += 1
+        elif RE_CHARGE_END.search(_normalize_money(s)) or RE_DATE.match(s):
+            uncertain += 1
     if stats is not None:
-        stats.update(mode="text", raw=raw_count, ignored=ignored)
+        stats.update(mode="text", raw=raw_count, ignored=ignored, uncertain=uncertain, consumed=consumed)
     return lines
 
 
@@ -327,7 +382,10 @@ def parse_details(text):
     if not stats:
         lines = parse_text(text, stats)
     stats["parsed"] = len(lines)
-    stats["unread"] = max(0, stats["raw"] - len(lines) - stats["ignored"])
+    stats["unread"] = max(0, stats["raw"] - stats.pop("consumed", len(lines)) - stats["ignored"])
+    stats["uncertain"] = min(stats["unread"], stats.get("uncertain", 0))
+    stats["status"] = ("read" if lines else "no-text" if not stats["raw"] else
+                       "uncertain-layout" if stats["uncertain"] else "no-itemized-lines")
     return lines, stats
 
 

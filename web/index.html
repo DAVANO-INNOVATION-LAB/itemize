@@ -121,6 +121,19 @@
     </div>
     <div id="outcome" class="outcome"></div>
     <p id="reading-note" class="reading-note hidden"></p>
+    <details id="read-recovery" class="read-recovery hidden">
+      <summary>Read or correct the extracted text</summary>
+      <div class="recovery-content">
+        <p id="recovery-help" class="hint">If a charge is missing or its amount is wrong, correct it using your original document. Put each service and its exact amount on its own line. Nothing is uploaded.</p>
+        <label for="recovery-text">Text read on this device</label>
+        <textarea id="recovery-text" rows="5" aria-describedby="recovery-help" spellcheck="false"
+          autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+        <div class="controls">
+          <button id="review-corrected" type="button" class="secondary">Review corrected text</button>
+          <p id="recovery-status" class="hint" role="status"></p>
+        </div>
+      </div>
+    </details>
   </div>
   <details id="technical" class="disclosure hidden">
     <summary>All findings and sources</summary>

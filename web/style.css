@@ -119,7 +119,7 @@ footer { margin-top: 23px; text-align: center; color: var(--muted); font-size: .
 .outcome .outcome-label { color: var(--deep); font-weight: 820; font-size: .72rem; margin: 0; letter-spacing: .095em; text-transform: uppercase; }
 .outcome h3 { margin: 6px 0 9px; font-size: clamp(1.33rem, 4.6vw, 2.12rem); letter-spacing: -.037em; line-height: 1.12; }
 .outcome p { margin: 0; max-width: 62ch; }
-.outcome .hint, .outcome button { margin-top: 11px; }
+.outcome p + p, .outcome .hint, .outcome button { margin-top: 11px; }
 .flagged-charge {
   display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 13px; align-items: baseline;
   border: 1px solid #e5d9fa; background: var(--white); border-radius: 11px; margin: 12px 0; padding: 9px 12px;
@@ -128,6 +128,12 @@ footer { margin-top: 23px; text-align: center; color: var(--muted); font-size: .
 .flagged-charge strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .reading-note { margin: 13px 0 0; color: var(--muted); font-size: .82rem; }
 .reading-note.has-unread { border-radius: 9px; color: #6d3b17; background: var(--peach); padding: 8px 10px; }
+.read-recovery { margin: 12px 0 0; border-bottom: 1px solid var(--edge); }
+.read-recovery > summary { color: var(--deep); padding: 7px 1px; font-size: .88rem; font-weight: 720; }
+.recovery-content { padding: 1px 0 12px; }
+.recovery-content label { display: block; margin: 9px 0 4px; font-size: .82rem; font-weight: 720; }
+.recovery-content textarea { min-height: 7rem; max-height: 22rem; }
+.recovery-content .controls .hint:empty { display: none; }
 .parsecheck { border: 1px solid #eadbd5; background: #fffaf1; border-radius: 15px; padding: 14px 17px; }
 .verify-alert { display: flex; gap: 10px; align-items: start; }
 .verify-mark { display: grid; flex: 0 0 auto; place-content: center; background: #ffebbd; color: #643807;

@@ -59,7 +59,8 @@ class TestReceiptInput(unittest.TestCase):
     def test_mixed_receipt_keeps_only_evidenced_charges(self):
         lines, stats = parse_details(MIXED)
         self.assertEqual(shape(lines), EXPECTED)
-        self.assertEqual(stats, {"mode": "text", "raw": 18, "parsed": 6, "ignored": 9, "unread": 3})
+        self.assertEqual(stats, {"mode": "text", "raw": 18, "parsed": 6, "ignored": 9, "unread": 3,
+                                 "uncertain": 1, "status": "read"})
 
     def test_address_only_and_unlabeled_bare_amount_are_not_charges(self):
         for s in ["1 Main Street", "123 Main St\nReston, VA 20190", "PO BOX 1234",
@@ -74,7 +75,8 @@ class TestReceiptInput(unittest.TestCase):
             'Code,Description,Charges\nA4550,Supply,1\n,1 Main Street,1\n,Total,$1\n'
             'A4550,Invalid 1,Reference 12345\n')
         self.assertEqual(shape(lines), [("A4550", "Supply", 1, 1, "")])
-        self.assertEqual(stats, {"mode": "delimited", "raw": 5, "ignored": 3, "parsed": 1, "unread": 1})
+        self.assertEqual(stats, {"mode": "delimited", "raw": 5, "ignored": 3, "parsed": 1, "unread": 1,
+                                 "uncertain": 1, "status": "read"})
 
     def test_loose_signed_money_and_accepted_alignment(self):
         text = "2026-03-14  CHG40021  Pharmacy handling  1  412.75\nRefund ($1.00)"
@@ -82,6 +84,38 @@ class TestReceiptInput(unittest.TestCase):
             ("CHG40021", "Pharmacy handling", 1, 412.75, "2026-03-14"),
             ("", "Refund", 1, -1, ""),
         ])
+
+    def test_aligned_headings_select_real_charge_not_last_amount(self):
+        text = ("101 Main Street\nService Date  Procedure  Charges  Allowed Amount  Patient Responsibility\n"
+                "03/14/2026  99283  US$125.00  $80.00  $30.00\n"
+                "03/14/2026  J1885  $1.00  $0.75  $0.25")
+        lines, stats = parse_details(text)
+        self.assertEqual(shape(lines), [("99283", "", 1, 125, "03/14/2026"),
+                                        ("J1885", "", 1, 1, "03/14/2026")])
+        self.assertEqual((stats["ignored"], stats["unread"], stats["status"]), (2, 0, "read"))
+        if NODE:
+            self.assertEqual(browser(text), (shape(lines), stats))
+
+    def test_portal_export_with_address_preamble_and_tsv_charges(self):
+        text = "Example Clinic\nReston, VA 20190\nDescription\tTotal Charges\nSupplies\t1\nX-Ray\t111.10"
+        lines, stats = parse_details(text)
+        self.assertEqual([row.charge for row in lines], [1, 111.10])
+        self.assertEqual(stats["mode"], "delimited")
+        if NODE:
+            self.assertEqual(browser(text), (shape(lines), stats))
+
+    def test_distinguishes_unsupported_table_from_no_text(self):
+        samples = [("", "no-text"), ("Example Clinic\nAmount due $500", "no-itemized-lines"),
+                   ("03/14/2026 J1885 Injection $120.00 $80.00 $30.00", "uncertain-layout"),
+                   ("Service Date  Description  Allowed Amount\n03/14/2026  Clinic Visit  $75.00 $20.00",
+                    "uncertain-layout")]
+        for text, status in samples:
+            with self.subTest(text=text):
+                lines, stats = parse_details(text)
+                self.assertFalse(lines)
+                self.assertEqual(stats["status"], status)
+                if NODE:
+                    self.assertEqual(browser(text), ([], stats))
 
     @unittest.skipIf(not NODE, "node unavailable")
     def test_browser_and_python_share_charge_evidence_and_diagnostics(self):
