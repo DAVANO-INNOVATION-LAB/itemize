@@ -187,8 +187,6 @@
    * the total and lets two identical credit lines be reported as a duplicate
    * CHARGE to dispute. Accounting parentheses count too. Mirrors RE_MONEY. */
   const RE_MONEY = /(-|\()?\s*\$?\s*([\d,]+\.\d{2}|[\d,]+)/;
-  const RE_MONEY_G = /(-|\()?\s*\$?\s*([\d,]+\.\d{2}|[\d,]+)/g;
-  const RE_MONEY_FULL = /^(-|\()?\s*\$?\s*([\d,]+\.\d{2}|[\d,]+)$/;
 
   function money(s) {
     if (s == null) return 0;
@@ -215,18 +213,6 @@
     const v = parseFloat(m[1]);
     if (!isFinite(v)) return d;
     return v <= 0 ? d : v;
-  }
-
-  /* Remove a trailing quantity/amount from a description.
-   * A backward scan rather than a regex: every regex spelling of "optional
-   * digits, optional dot, optional digits, at the end" retries from each start
-   * position, which is quadratic on a long numeric run and runs in the reader's
-   * browser. Mirrors _strip_trailing_number. */
-  function stripTrailingNumber(desc) {
-    const t = desc.replace(/\s+$/, '');
-    let j = t.length;
-    while (j > 0 && (/[0-9]/.test(t[j - 1]) || t[j - 1] === ',' || t[j - 1] === '.')) j--;
-    return t.slice(0, j);
   }
 
   /* ----------------------------------------------------------- parsing */
@@ -318,7 +304,7 @@
     return out;
   }
 
-  function parseDelimited(text) {
+  function parseDelimited(text, stats) {
     // Mirrors _denul: Python's csv module raised on NUL up to 3.10, so both
     // engines replace it with a SPACE before parsing. Dropping the byte instead
     // would leave them reading "nulbyte" and "nul byte" for the same input.
@@ -340,6 +326,7 @@
     }
     if (hdrI < 0) return [];
 
+    if (stats) Object.assign(stats, {mode:'delimited', raw:rows.length, ignored:hdrI + 1});
     const width = rows[hdrI].length;
     const lines = [];
     for (let i = hdrI + 1; i < rows.length; i++) {
@@ -347,7 +334,11 @@
       const g = (f) => (cols[f] != null && cols[f] < row.length ? row[cols[f]].trim() : '');
       const code = clean(g('code')).toUpperCase(), desc = clean(g('desc')), chargeRaw = g('charge');
       if (!chargeRaw && !code && !desc) continue;
-      if (!code && /\b(total|balance|subtotal|amount due)\b/i.test(desc)) continue;
+      if (!code && (metadata(desc) || /^balance\b/i.test(desc))) {
+        if (stats) stats.ignored += 1;
+        continue;
+      }
+      if (chargeRaw && !RE_MONEY_FIELD.test(chargeRaw)) continue;
       lines.push({
         idx: lines.length + 1, code, desc,
         units: num(g('units')), charge: money(chargeRaw), date: g('date'),
@@ -382,91 +373,77 @@
     return bare ? bare[1] : '';
   }
 
-  /* Read a line already split into columns (PDF text layers, aligned statements).
-   * Positional reading beats pattern-matching one run-on string. Mirrors
-   * _from_columns in itemize/parse.py. */
-  function fromColumns(parts) {
-    let chargeI = -1;
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const bare = parts[i].trim().replace(/\$/g, '').replace(/,/g, '');
-      if (RE_MONEY_FULL.test(bare) || /^\$?[\d,]+\.\d{2}$/.test(parts[i].trim())) {
-        chargeI = i; break;
-      }
-    }
-    if (chargeI < 0) return null;
-    const charge = money(parts[chargeI]);
-    if (charge === 0) return null;   // a credit is a real line; only zero is noise
-
-    let date = '';
-    for (const s of parts) { const m = s.match(RE_DATEISH); if (m) { date = m[1]; break; } }
-
-    let code = '';
-    for (let i = 0; i < parts.length; i++) {
-      if (i === chargeI) continue;
-      const t = parts[i].trim();
-      if (t === date || RE_DATEISH.test(t)) continue;
-      if (RE_CODEISH.test(t)) { code = t.toUpperCase(); break; }
-    }
-
-    let units = 1;
-    for (let i = chargeI - 1; i >= 0; i--) {
-      const t = parts[i].trim();
-      if (/^\d{1,4}(\.\d+)?$/.test(t) && t.toUpperCase() !== code) { units = num(t); break; }
-    }
-
-    let desc = '';
-    for (let i = 0; i < parts.length; i++) {
-      const t = parts[i].trim();
-      if (i === chargeI || t.toUpperCase() === code || t === date) continue;
-      if (t.length > desc.length && /[A-Za-z]{3}/.test(t)) desc = t;
-    }
-    return { code, desc: desc.slice(0, 160), units, charge, date };
+  // Anchored money plus independent service evidence; mirrors itemize/parse.py.
+  // Cap digit lengths before conversion and never search inside dates, ZIPs or IDs.
+  const AMOUNT = '(?:[0-9]{1,12}|[0-9]{1,3}(?:,[0-9]{3}){1,3})(?:\\.[0-9]{2})?';
+  const MONEY_FIELD = '(?:-?\\$?[ \\t]?' + AMOUNT + '|\\(\\$?[ \\t]?' + AMOUNT + '\\))';
+  const RE_MONEY_FIELD = new RegExp('^' + MONEY_FIELD + '$');
+  const RE_CHARGE_END = new RegExp('(?:^|[ \\t])(' + MONEY_FIELD + ')$');
+  const RE_STREET = /^\s*[0-9]+[A-Za-z]?(?:[-/][0-9]+)?\s+.+?\b(?:street|st\.?|avenue|ave\.?|road|rd\.?|boulevard|blvd\.?|drive|dr\.?|lane|ln\.?|way|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|terrace|ter\.?|highway|hwy\.?)(?=\s|,|\.|$)/i;
+  const RE_POSTAL = /^[A-Za-z][A-Za-z .'-]*,?\s+(?:AL|AK|AZ|AR|CA|CO|CT|DE|DC|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|AS|GU|MP|PR|VI|AA|AE|AP)\s+[0-9]{5}(?:-[0-9]{4})?$/i;
+  const RE_METADATA = /^(?:subtotal\b|grand\s+total\b|total(?:\s+(?:charges?|billed|amount|due|payments?|credits?|balance)\b|\s*[:$]|\s+[0-9]|$)|(?:balance|amount)\s+due\b|(?:statement|current|previous|remaining|new|patient)\s+balance\b|(?:patient\s+)?(?:account|member|policy|claim|invoice|reference|statement|visit|record)\s*(?:number\b|no\.?\b|id\b|#|:|[0-9])|(?:patient name|address|billing address|mailing address|date of birth|dob|mrn|phone|fax)\s*(?::|#|\b)|(?:statement date|invoice date|date printed|page\s+[0-9]+)\b|(?:p\.?\s*o\.?\s+box|suite|ste\.?|apt\.?|apartment|unit|floor)\s*[#:]*\s*[0-9]|(?:date(?: of service)?\s+)?(?:cpt\s+|code\s+)?(?:description|service description)\s+(?:(?:qty|quantity|units)\s+)?(?:charge[s]?|amount)\b)/i;
+  function metadata(s) {
+    const date = s.match(RE_DATEISH);
+    return RE_METADATA.test(s) || RE_STREET.test(s) || RE_POSTAL.test(s) || (date && date[1] === s);
   }
 
-  function parseText(text) {
+  function textLine(s, idx) {
+    const match = s.match(RE_CHARGE_END);
+    if (!match) return null;
+    const field = match[1], charge = money(field);
+    if (!Number.isFinite(charge) || charge === 0) return null;
+    const left = s.slice(0, s.length - field.length).trimEnd();
+    const positional = left.split(/\s{2,}/).length >= 2;
+    const dm = left.match(RE_DATEISH);
+    const date = dm && dm.index === 0 ? dm[1] : '';
+    const prefix = date ? left.slice(date.length).trimStart() : left;
+    const head = (prefix.match(/^\S+/) || [''])[0];
+    const code = (/^(?:[0-9]{5}|[A-Za-z][0-9]{4})$/.test(head) ||
+      (positional && /^[A-Za-z]/.test(head) && RE_CODEISH.test(head))) ? head.toUpperCase() : '';
+    if (!/[.$]/.test(field) && !code) return null;
+    let desc = code ? prefix.slice(head.length).trimStart() : prefix;
+    const tail = desc.match(/[ \t]([0-9]{1,4}(?:\.[0-9]+)?)$/);
+    let units = 1;
+    if (tail && (code || positional)) {
+      units = num(tail[1]);
+      desc = desc.slice(0, tail.index);
+    }
+    desc = desc.replace(/^[ .\t|-]+|[ .\t|-]+$/g, '');
+    if (!/[A-Za-z]{2}/.test(desc) || metadata(desc)) return null;
+    return {
+      idx, code, desc:desc.slice(0,160), units, charge, date,
+      modifiers:[], revenue_code:'', unit_price:0, ndc:normalizeNdc(s), suspect_columns:false,
+    };
+  }
+
+  function parseText(text, stats) {
     const lines = [];
+    let rawCount = 0, ignored = 0;
     for (const raw of text.split('\n')) {
       const s = raw.trim();
-      if (s.length < 8) continue;
-      if (/\b(total|balance due|subtotal|amount due|page \d)\b/i.test(s)) continue;
-      const monies = s.match(RE_MONEY_G);
-      if (!monies) continue;
-
-      const cols = s.split(/\s{2,}/);
-      if (cols.length >= 3) {
-        const got = fromColumns(cols);
-        if (got) {
-          lines.push({
-            idx: lines.length + 1, code: got.code, desc: got.desc, units: got.units,
-            charge: got.charge, date: got.date, modifiers: [], revenue_code: '',
-            unit_price: 0, ndc: normalizeNdc(s), suspect_columns: false,
-          });
-          continue;
-        }
-      }
-
-      const charge = money(monies[monies.length - 1]);
-      if (charge === 0) continue;   // a credit is a real line; only zero is noise
-      const cm = s.match(/\b(\d{5}|[A-Za-z]\d{4})\b/);
-      const dm = s.match(/\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2})\b/);
-      const um = s.match(/\b(\d{1,3})\b(?=[^\d]*[\d,]+\.\d{2}\s*$)/);
-      let desc = cm ? s.slice(s.indexOf(cm[1]) + cm[1].length) : s;
-      desc = stripTrailingNumber(desc).replace(/^[\s.\t|-]+|[\s.\t|-]+$/g, '');
-      lines.push({
-        idx: lines.length + 1, code: cm ? cm[1].toUpperCase() : '', desc: desc.slice(0, 160),
-        units: um ? num(um[1]) : 1, charge, date: dm ? dm[1] : '', modifiers: [], revenue_code: '',
-        unit_price: 0, ndc: normalizeNdc(s), suspect_columns: false,
-      });
+      if (!s) continue;
+      rawCount += 1;
+      if (metadata(s)) { ignored += 1; continue; }
+      const line = textLine(s, lines.length + 1);
+      if (line) lines.push(line);
     }
+    if (stats) Object.assign(stats, {mode:'text', raw:rawCount, ignored});
     return lines;
   }
 
-  function parseBill(text) {
+  function parseBillDetails(text) {
     text = text.replace(/\r\n?/g, '\n').replace(/\u0000/g, ' ').replace(/^\ufeff/, '');
-    const d = parseDelimited(text);
-    return d.length ? d : parseText(text);
+    const stats = {};
+    let lines = parseDelimited(text, stats);
+    if (!stats.mode) lines = parseText(text, stats);
+    stats.parsed = lines.length;
+    stats.unread = Math.max(0, stats.raw - lines.length - stats.ignored);
+    return {lines, stats};
   }
 
+  function parseBill(text) {
+    return parseBillDetails(text).lines;
+  }
 
   /* --------------------------------------------------------- eob parsing */
   const EOB_ALIASES = {
@@ -1444,7 +1421,7 @@ Fewer than one per cent of denied claims are appealed. I am appealing this one.
 
   return {
     classify, Reference, Context, audit, rights, stateFindings, eobCrossCheck, applyContext,
-    parseBill, parseDelimited, parseText, parseEob,
+    parseBill, parseBillDetails, parseDelimited, parseText, parseEob,
     LETTERS, suggestLetters, nextActions, disputableTotal, MAX_ACTIONS,
     money, num, fmt, RULES, SEV_ORDER,
     ASP_NOTICE_MULTIPLE, ASP_HIGH_MULTIPLE, DME_NOTICE_MULTIPLE, DME_HIGH_MULTIPLE,

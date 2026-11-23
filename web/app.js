@@ -121,12 +121,16 @@ function buildStateOptions(states) {
 }
 
 /* --------------------------------------------------------- parse stats */
-function parseStats(text, lines) {
-  const raw = text.split('\n').filter((l) => l.trim()).length;
-  // One header row is expected for delimited input; everything else that did not
-  // become a charge line is genuinely unaccounted for.
-  const unread = Math.max(0, raw - lines.length - 1);
-  return { raw, parsed: lines.length, unread };
+function renderReadingNote(stats) {
+  const note = $('#reading-note');
+  const ignored = stats?.ignored || 0;
+  const unread = stats?.unread || 0;
+  const details = [];
+  if (ignored) details.push(`Left out ${ignored} non-charge ${ignored === 1 ? 'row' : 'rows'}.`);
+  if (unread) details.push(`Couldn’t read ${unread} other ${unread === 1 ? 'row' : 'rows'} as charges. Check the original for anything we missed.`);
+  note.classList.toggle('has-unread', unread > 0);
+  note.classList.toggle('hidden', details.length === 0);
+  note.textContent = details.join(' ');
 }
 
 /* -------------------------------------------------------------- render */
@@ -143,9 +147,6 @@ function render(lines, findings, ctx, stats) {
     ['Total charges', fmt(total)],
     ['Findings', String(findings.length)],
   ];
-  if (stats && stats.unread > 0) {
-    stat.push(['Input rows not read', String(stats.unread), stats.unread > lines.length * 0.25]);
-  }
   if (recoverable > 0) stat.push(['Disputable line items', fmt(recoverable), true]);
   if (wholeBill.length) stat.push(['Whole-bill protections', String(wholeBill.length), true]);
 
@@ -194,6 +195,7 @@ function render(lines, findings, ctx, stats) {
   $('#charges').classList.toggle('hidden', tentative);
   for (const id of ['technical', 'exporttools']) document.getElementById(id).classList.toggle('hidden', tentative);
   announce(lines);
+  renderReadingNote(stats);
 }
 
 /* The single live region. A screen reader gets one sentence per run rather than
@@ -481,6 +483,8 @@ async function readFileText(f) {
 
 function requestState(busy, retry) {
   $('#receipt-controls').setAttribute('aria-busy', String(busy));
+  $('#dropzone').classList.toggle('is-reading', busy);
+  $('#read-indicator').classList.toggle('hidden', !busy);
   $('#cancelread').classList.toggle('hidden', !busy);
   $('#retryread').classList.toggle('hidden', !retry);
 }
@@ -568,7 +572,8 @@ function confirmOverwrite(question) {
 function runAudit() {
   const text = $('#bill').value.trim();
   if (!text) { $('#bill').focus(); return; }
-  lastLines = I.parseBill(text);
+  const { lines, stats } = I.parseBillDetails(text);
+  lastLines = lines;
   lastCtx = readContext();
   if (!lastLines.length) {
     $('#result-title').textContent = 'Your receipt review';
@@ -579,12 +584,13 @@ function runAudit() {
     $('#outcome').classList.remove('hidden');
     for (const id of ['parsecheck', 'technical', 'charges', 'exporttools']) document.getElementById(id).classList.add('hidden');
     $('#resultstatus').textContent = 'No individual charges read.';
+    renderReadingNote(stats);
     if (!replacing) showStage('review');
     setDownloadEnabled(false);
     return;
   }
   lastFindings = !linesConfirmed && isTentative(lastLines) ? [] : I.audit(lastLines, ref, lastCtx, eobRows);
-  render(lastLines, lastFindings, lastCtx, parseStats(text, lastLines));
+  render(lastLines, lastFindings, lastCtx, stats);
   setDownloadEnabled(linesConfirmed);
   persist();
 }

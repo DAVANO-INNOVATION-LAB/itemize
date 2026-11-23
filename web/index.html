@@ -11,29 +11,64 @@
 <div class="wrap">
 
 <header class="topbar">
-  <a class="wordmark" href="./"><span aria-hidden="true">✓</span> itemize</a>
-  <span class="private-label">No account needed</span>
+  <a class="wordmark" href="./" aria-label="Itemize home">
+    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect width="40" height="40" rx="13" fill="currentColor"/><path d="M13 11h14v18l-3.5-2-3.5 2-3.5-2-3.5 2V11Z" fill="#fff"/><path d="m17 19 2 2 4-4" stroke="#512bd6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>itemize<span class="brand-dot">.</span></span>
+  </a>
+  <span class="private-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> Private by design</span>
 </header>
 
 <main id="workspace" aria-labelledby="intake-title">
   <section id="dropzone" class="receipt-intake">
-    <div class="receipt-icon" aria-hidden="true">▤</div>
-    <h1 id="intake-title">Add your medical receipt.</h1>
-    <p class="tagline">Take a photo or drop a PDF. We’ll read the charges and show you what needs attention.</p>
-    <div id="receipt-controls" class="controls receipt-buttons">
-      <button id="takephoto" type="button" class="primary" aria-controls="camera">Take a photo</button>
-      <button id="choosefile" type="button" class="secondary" aria-controls="file">Choose a file</button>
+    <div class="hero-copy">
+      <div class="eyebrow"><span class="eyebrow-dot"></span> MEDICAL BILL REVIEW</div>
+      <h1 id="intake-title">A clearer look at your<br class="desktop-break"> medical bill.</h1>
+      <p class="tagline">Add a receipt or itemized bill. We’ll read the charges, look for issues, and show you what to ask next.</p>
+      <div id="receipt-controls" class="controls receipt-buttons">
+        <button id="takephoto" type="button" class="primary" aria-controls="camera"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h4l2-3h4l2 3h4a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3"/></svg>Take a photo</button>
+        <button id="choosefile" type="button" class="secondary" aria-controls="file"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3m-5 5 5-5 5 5M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Choose a file</button>
+      </div>
+      <p class="hint intake-note" id="intake-note">Or drop a photo or PDF anywhere in this card.</p>
+      <div class="receipt-feedback">
+        <div id="read-indicator" class="read-indicator hidden" aria-hidden="true"><span></span></div>
+        <p id="filestatus" class="filestatus" role="status" aria-live="polite"></p>
+        <div class="feedback-controls">
+          <button id="cancelread" class="linkbtn hidden" type="button">Cancel</button>
+          <button id="retryread" class="linkbtn hidden" type="button">Try again</button>
+          <button id="backreview" class="linkbtn hidden" type="button">Back to current review</button>
+        </div>
+      </div>
     </div>
+    <figure class="receipt-art" aria-hidden="true">
+      <svg viewBox="0 0 420 405" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="art-glass" x1="40" y1="22" x2="370" y2="382" gradientUnits="userSpaceOnUse"><stop stop-color="#F4EEFF"/><stop offset="1" stop-color="#DCD0FF"/></linearGradient><pattern id="art-grid" width="22" height="22" patternUnits="userSpaceOnUse"><path d="M0 0H22V22" stroke="#9679E4" stroke-opacity=".2"/></pattern></defs>
+        <rect x="18" y="18" width="384" height="369" rx="42" fill="url(#art-glass)"/>
+        <rect x="18" y="18" width="384" height="369" rx="42" fill="url(#art-grid)"/>
+        <circle cx="207" cy="194" r="146" stroke="#9A7BE9" stroke-opacity=".46" stroke-dasharray="4 7"/>
+        <circle cx="207" cy="194" r="121" fill="#CBB8FA" fill-opacity=".75"/>
+        <path d="M68 81h26m-13-13v26M345 300h22m-11-11v22M328 84h12m-6-6v12" stroke="#7449D8" stroke-width="2.4" stroke-linecap="round"/>
+        <g transform="rotate(-10 204 200)">
+          <path d="M121 86h177v245l-15-9-15 9-15-9-15 9-15-9-15 9-15-9-15 9-15-9-15 9-12-7V86Z" fill="#5C30C3" fill-opacity=".24"/>
+          <path d="M108 72h177v245l-15-9-15 9-15-9-15 9-15-9-15 9-15-9-15 9-15-9-15 9-12-7V72Z" fill="#FFFDF9" stroke="#5A33BB" stroke-width="2"/>
+          <rect x="130" y="96" width="34" height="34" rx="9" fill="#512BD6"/>
+          <path d="M147 105v16m-8-8h16" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M177 104h77m-77 11h54M131 157h129M131 182h58m43 0h28M131 207h74m32 0h23M131 232h64m47 0h18M131 258h129M131 279h41m61 0h27" stroke="#9582B8" stroke-width="4" stroke-linecap="round"/>
+          <path d="M131 157h129m-129 101h129" stroke="#D9CDEB" stroke-width="2" stroke-dasharray="3 5"/>
+        </g>
+        <g transform="rotate(10 301 240)">
+          <rect x="240" y="202" width="130" height="77" rx="18" fill="#5835B5" fill-opacity=".24"/>
+          <rect x="233" y="193" width="130" height="77" rx="18" fill="#CDFA92" stroke="#5B7949" stroke-width="2"/>
+          <circle cx="261" cy="232" r="13" fill="#28450E"/>
+          <path d="m255 232 4 4 8-8" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M285 225h55m-55 12h38" stroke="#416821" stroke-width="4" stroke-linecap="round"/>
+        </g>
+      </svg>
+    </figure>
     <input type="file" id="camera" class="hidden" accept="image/*" capture="environment">
     <input type="file" id="file" class="hidden"
       accept="image/*,.pdf,.csv,.tsv,.txt,application/pdf,text/csv,text/plain">
-    <p class="hint intake-note" id="intake-note">You can also drop a photo or PDF here.</p>
-    <p id="filestatus" class="filestatus" role="status" aria-live="polite"></p>
-    <button id="cancelread" class="linkbtn hidden" type="button">Cancel</button>
-    <button id="retryread" class="linkbtn hidden" type="button">Try again</button>
-    <button id="backreview" class="linkbtn hidden" type="button">Back to current review</button>
   </section>
-  <p id="privacy-caption" class="privacy-caption">Your receipt is processed on this device, not uploaded.</p>
+  <p id="privacy-caption" class="privacy-caption"><span aria-hidden="true">◆</span> Nothing is uploaded. No account needed.</p>
 
   <details id="manual" class="disclosure intake-support">
     <summary>Paste bill text or try an example</summary>
@@ -59,15 +94,19 @@
 
 <section id="results" class="hidden" aria-labelledby="result-title">
   <div class="result-shell">
+    <div class="result-decoration" aria-hidden="true"></div>
     <div class="result-bar">
-      <p class="result-label">Receipts / Review</p>
+      <p class="result-label"><span class="eyebrow-dot"></span> YOUR MEDICAL DOCUMENT</p>
       <button id="reviewagain" class="secondary" type="button">Review another</button>
     </div>
     <h2 id="result-title" tabindex="-1">Your receipt review</h2>
     <p id="resultstatus" class="resultstatus" role="status" aria-live="polite"></p>
     <div id="parsecheck" class="parsecheck hidden">
-      <strong id="verify-heading">Check the amounts match your receipt.</strong>
-      <p id="parsecheckbody"></p>
+      <div class="verify-alert">
+        <span class="verify-mark" aria-hidden="true">≋</span>
+        <div><strong id="verify-heading">Check the amounts match your receipt.</strong>
+        <p id="parsecheckbody"></p></div>
+      </div>
       <div id="verify-photos" class="verify-charges" tabindex="0" aria-labelledby="verify-heading">
         <ol id="verify-first"></ol>
         <details id="verify-more" class="hidden">
@@ -81,6 +120,7 @@
       </div>
     </div>
     <div id="outcome" class="outcome"></div>
+    <p id="reading-note" class="reading-note hidden"></p>
   </div>
   <details id="technical" class="disclosure hidden">
     <summary>All findings and sources</summary>
@@ -230,7 +270,7 @@
 </main>
 
 <footer>
-  <p>Open source. Information, not advice. <a href="https://github.com/DAVANO-INNOVATION-LAB/itemize/blob/main/CAVEATS.md">Read the caveats</a>.</p>
+  <p>Built to help you ask better questions. Information, not advice. <a href="https://github.com/DAVANO-INNOVATION-LAB/itemize/blob/main/CAVEATS.md">Read the caveats</a>.</p>
 </footer>
 
 </div>

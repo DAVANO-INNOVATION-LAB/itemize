@@ -4,14 +4,14 @@ Two input shapes, because that is what people actually have:
   * delimited (CSV/TSV) exported from a portal
   * loose text pasted out of a PDF
 
-Both are best-effort. Anything we cannot confidently read becomes a line with
-no code, which the rules engine then flags -- silence is never treated as
-"nothing wrong".
+Both are best-effort. A readable charge can lack a billing code; non-charge
+metadata and ambiguous text are never converted to money by guessing.
 """
 from __future__ import annotations
 
 import csv
 import io
+import math
 import re
 
 from .model import Line
@@ -175,7 +175,7 @@ def _map_headers(header):
     return out
 
 
-def parse_delimited(text):
+def parse_delimited(text, stats=None):
     text = _denul(text)
     sample = text[:4096]
     try:
@@ -196,6 +196,8 @@ def parse_delimited(text):
     if hdr_i is None:
         return []
 
+    if stats is not None:
+        stats.update(mode="delimited", raw=len(rows), ignored=hdr_i + 1)
     width = len(rows[hdr_i])
     lines = []
     for row in rows[hdr_i + 1:]:
@@ -208,7 +210,11 @@ def parse_delimited(text):
         if not charge_raw and not code and not desc:
             continue
         # Skip obvious total/subtotal rows.
-        if not code and re.search(r"\b(total|balance|subtotal|amount due)\b", desc, re.I):
+        if not code and (_metadata(desc) or re.search(r"^balance\b", desc, re.I)):
+            if stats is not None:
+                stats["ignored"] += 1
+            continue
+        if charge_raw and not RE_MONEY_FIELD.fullmatch(charge_raw):
             continue
         mods = [m.strip().upper() for m in re.split(r"[,\s/]+", g("modifiers")) if m.strip()]
         lines.append(Line(
@@ -223,134 +229,108 @@ def parse_delimited(text):
     return lines
 
 
-def _strip_trailing_number(desc):
-    """Remove a trailing quantity/amount from a description.
+# A charge must be a complete money field, never a substring of a date,
+# house number, ZIP, barcode or dosage. Cap digits before numeric conversion.
+_AMOUNT = r"(?:[0-9]{1,12}|[0-9]{1,3}(?:,[0-9]{3}){1,3})(?:\.[0-9]{2})?"
+RE_MONEY_FIELD = re.compile(r"(?:-?\$?[ \t]?" + _AMOUNT + r"|\(\$?[ \t]?" + _AMOUNT + r"\))")
+RE_CHARGE_END = re.compile(r"(?:^|[ \t])(" + RE_MONEY_FIELD.pattern + r")$")
+RE_CODEISH = re.compile(r"^[A-Za-z]{0,4}[0-9]{3,6}$")
+RE_STREET = re.compile(
+    r"^\s*[0-9]+[A-Za-z]?(?:[-/][0-9]+)?\s+.+?\b(?:street|st\.?|avenue|ave\.?|"
+    r"road|rd\.?|boulevard|blvd\.?|drive|dr\.?|lane|ln\.?|way|court|ct\.?|"
+    r"place|pl\.?|circle|cir\.?|parkway|pkwy\.?|terrace|ter\.?|highway|hwy\.?)"
+    r"(?=\s|,|\.|$)", re.I)
+RE_POSTAL = re.compile(
+    r"^[A-Za-z][A-Za-z .'-]*,?\s+(?:AL|AK|AZ|AR|CA|CO|CT|DE|DC|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|AS|GU|MP|PR|VI|AA|AE|AP)\s+[0-9]{5}(?:-[0-9]{4})?$", re.I)
+RE_METADATA = re.compile(
+    r"^(?:subtotal\b|grand\s+total\b|total(?:\s+(?:charges?|billed|amount|due|payments?|"
+    r"credits?|balance)\b|\s*[:$]|\s+[0-9]|$)|(?:balance|amount)\s+due\b|"
+    r"(?:statement|current|previous|remaining|new|patient)\s+balance\b|"
+    r"(?:patient\s+)?(?:account|member|policy|claim|invoice|reference|statement|visit|record)"
+    r"\s*(?:number\b|no\.?\b|id\b|#|:|[0-9])|"
+    r"(?:patient name|address|billing address|mailing address|date of birth|dob|mrn|phone|fax)"
+    r"\s*(?::|#|\b)|"
+    r"(?:statement date|invoice date|date printed|page\s+[0-9]+)\b|"
+    r"(?:p\.?\s*o\.?\s+box|suite|ste\.?|apt\.?|apartment|unit|floor)\s*[#:]*\s*[0-9]|"
+    r"(?:date(?: of service)?\s+)?(?:cpt\s+|code\s+)?(?:description|service description)\s+"
+    r"(?:(?:qty|quantity|units)\s+)?(?:charge[s]?|amount)\b)", re.I)
 
-    Done as a backward scan rather than a regex on purpose. Every regex spelling
-    of "optional digits, optional dot, optional digits, at the end" makes the
-    engine retry from each start position, which is quadratic on a long numeric
-    run -- an account number or a barcode off a PDF text layer -- and it runs in
-    the reader's browser. This is linear and cannot backtrack.
-    """
-    t = desc.rstrip()
-    j = len(t)
-    while j > 0 and (t[j - 1].isdigit() or t[j - 1] in ",."):
-        j -= 1
-    return t[:j]
+
+def _metadata(s):
+    return bool(RE_METADATA.search(s) or RE_STREET.search(s) or RE_POSTAL.fullmatch(s)
+                or RE_DATE.fullmatch(s))
 
 
-RE_CODEISH = re.compile(r"^[A-Za-z]{0,4}\d{3,6}$")
-
-
-def _from_columns(parts):
-    """Read a line already split into columns (PDF text layers, aligned text).
-
-    Returns (code, desc, units, charge, date) or None when the row does not
-    look like a charge line.
-    """
-    charge_i = None
-    for i in range(len(parts) - 1, -1, -1):
-        if RE_MONEY.fullmatch(parts[i].strip().replace("$", "").replace(",", "")) \
-                or re.fullmatch(r"\$?[\d,]+\.\d{2}", parts[i].strip()):
-            charge_i = i
-            break
-    if charge_i is None:
+def _text_line(s, idx):
+    # PDF/OCR layout is frequently a single run-on string. Accept only a
+    # trailing standalone amount and independent service-like text. A bare
+    # integer additionally needs a billing code at the start (after any date).
+    match = RE_CHARGE_END.search(s)
+    if not match:
         return None
-    charge = _money(parts[charge_i])
-    if charge == 0:
-        return None            # a credit is a real line; only zero is noise
-
-    date = ""
-    for s in parts:
-        m = RE_DATE.search(s)
-        if m:
-            date = m.group(1)
-            break
-
-    code = ""
-    for i, s in enumerate(parts):
-        if i == charge_i:
-            continue
-        t = s.strip()
-        if t == date or RE_DATE.search(t):
-            continue
-        if RE_CODEISH.match(t):
-            code = t.upper()
-            break
-
+    field = match.group(1)
+    charge = _money(field)
+    if not math.isfinite(charge) or charge == 0:
+        return None
+    left = s[:match.start(1)].rstrip()
+    cols = re.split(r"\s{2,}", left)
+    positional = len(cols) >= 2
+    dm = RE_DATE.match(left)
+    date = dm.group(1) if dm else ""
+    prefix = left[dm.end():].lstrip() if dm else left
+    first = prefix.split(maxsplit=1)
+    head = first[0] if first else ""
+    # Numeric identifiers wider/shorter than a CPT are not evidence in an
+    # undelimited line. Custom alphanumeric codes are supported in aligned rows.
+    code = head.upper() if (RE_CODE.fullmatch(head) or
+                            (positional and head[:1].isalpha() and RE_CODEISH.fullmatch(head))) else ""
+    if "." not in field and "$" not in field and not code:
+        return None
+    desc = first[1] if code and len(first) > 1 else ("" if code else prefix)
+    parts = desc.rsplit(maxsplit=1)
     units = 1.0
-    for i in range(charge_i - 1, -1, -1):
-        t = parts[i].strip()
-        if re.fullmatch(r"\d{1,4}(\.\d+)?", t) and t.upper() != code:
-            units = _num(t)
-            break
-
-    desc = ""
-    for i, s in enumerate(parts):
-        t = s.strip()
-        if i == charge_i or t.upper() == code or t == date:
-            continue
-        if len(t) > len(desc) and re.search(r"[A-Za-z]{3}", t):
-            desc = t
-    return code, desc[:160], units, charge, date
+    if len(parts) == 2 and (code or positional) and re.fullmatch(r"[0-9]{1,4}(?:\.[0-9]+)?", parts[1]):
+        units = _num(parts[1])
+        desc = parts[0]
+    desc = desc.strip(" .\t-|")
+    if not re.search(r"[A-Za-z]{2}", desc) or _metadata(desc):
+        return None
+    return Line(idx=idx, code=code, desc=desc[:160], units=units, charge=charge,
+                date=date, ndc=normalize_ndc(s), raw=s[:300])
 
 
-def parse_text(text):
-    """Loose per-line extraction for bills pasted out of a PDF."""
+def parse_text(text, stats=None):
+    """Extract plausible charges, retaining a count of ignored and unread rows."""
     lines = []
+    raw_count = ignored = 0
     for raw in text.split("\n"):
         s = raw.strip()
-        if not s or len(s) < 8:
+        if not s:
             continue
-        if re.search(r"\b(total|balance due|subtotal|amount due|page \d)\b", s, re.I):
+        raw_count += 1
+        if _metadata(s):
+            ignored += 1
             continue
-        monies = list(RE_MONEY.finditer(s))
-        if not monies:
-            continue
-
-        # A line with real column gaps (PDF text layers, aligned statements)
-        # can be read positionally, which is far more reliable than pattern
-        # matching against one run-on string.
-        cols = re.split(r"\s{2,}", s)
-        if len(cols) >= 3:
-            got = _from_columns(cols)
-            if got:
-                code, desc, units, charge, date = got
-                lines.append(Line(idx=len(lines) + 1, code=code, desc=desc,
-                                  units=units, charge=charge, date=date,
-                                  ndc=normalize_ndc(s), raw=s[:300]))
-                continue
-        charge = _money_from(monies[-1])
-        if charge == 0:
-            continue           # a credit is a real line; only zero is noise
-        cm = RE_CODE.search(s)
-        code = cm.group(1).upper() if cm else ""
-        dm = RE_DATE.search(s)
-        # Units: a small standalone integer sitting between the code and the money.
-        units = 1.0
-        um = re.search(r"\b(\d{1,3})\b(?=[^\d]*[\d,]+\.\d{2}\s*$)", s)
-        if um:
-            units = _num(um.group(1))
-        desc = s
-        if cm:
-            desc = s[cm.end():]
-        # `[\d,]*\.?\d*\s*$` let two quantifiers both match bare digits, so a long
-        # numeric run (an account number, a barcode off a PDF text layer) made the
-        # engine explore every split: ~1.9s at 1,000 digits, unbounded at 20,000,
-        # and it runs in the reader's browser. The decimal part is now only
-        # reachable through a required dot, which removes the ambiguity.
-        desc = _strip_trailing_number(desc).strip(" .\t-|")
-        lines.append(Line(idx=len(lines) + 1, code=code, desc=desc[:160],
-                          units=units, charge=charge,
-                          date=dm.group(1) if dm else "",
-                          ndc=normalize_ndc(s), raw=s[:300]))
+        line = _text_line(s, len(lines) + 1)
+        if line is not None:
+            lines.append(line)
+    if stats is not None:
+        stats.update(mode="text", raw=raw_count, ignored=ignored)
     return lines
 
 
-def parse(text):
-    """Try delimited first, fall back to loose text. Returns [Line]."""
+def parse_details(text):
+    """Return itemized lines and transparent counts, without collecting text."""
     text = _denul(text.replace("\r\n", "\n").replace("\r", "\n")).lstrip("\ufeff")
-    lines = parse_delimited(text)
-    if len(lines) >= 1:
-        return lines
-    return parse_text(text)
+    stats = {}
+    lines = parse_delimited(text, stats)
+    if not stats:
+        lines = parse_text(text, stats)
+    stats["parsed"] = len(lines)
+    stats["unread"] = max(0, stats["raw"] - len(lines) - stats["ignored"])
+    return lines, stats
+
+
+def parse(text):
+    """The stable public API returns only itemized Line records."""
+    return parse_details(text)[0]

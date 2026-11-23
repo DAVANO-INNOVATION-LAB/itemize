@@ -60,8 +60,12 @@ async function main() {
   const charges = 'J1885 KETOROLAC 2 180.00\nJ1885 KETOROLAC 2 180.00\nTOTAL $360.00';
   env.newFile = photo;
   const reading = run('handleFile(newFile)');
+  assert(!element('#read-indicator').classList.contains('hidden'));
+  assert(element('#dropzone').classList.contains('is-reading'));
   jobs.get(photo.name).resolve(charges);
   await reading;
+  assert(element('#read-indicator').classList.contains('hidden'));
+  assert(!element('#dropzone').classList.contains('is-reading'));
   assert.match(element('#resultstatus').textContent,/2 charges read from your photo/);
   assert(element('#outcome').classList.contains('hidden'));
   assert(element('#download').disabled && element('#print').disabled);
@@ -124,6 +128,16 @@ async function main() {
   assert(run('lastLines.length') > 0);
   assert(!element('#outcome').classList.contains('hidden'));
   assert(element('#download').disabled);
+
+  const addressDocument = '1 Maple Street\nSuite 1\nFairfax, VA 22030\n'
+    + 'J1885 KETOROLAC 2 180.00\nTOTAL $180.00\nA line the parser cannot classify';
+  env.newFile = filename('synthetic-address.txt','text/plain',addressDocument);
+  await run('handleFile(newFile)');
+  assert.equal(run('lastLines.length'), 1);
+  assert.equal(run('lastLines[0].charge'), 180);
+  assert.match(element('#reading-note').textContent,/Left out 4 non-charge rows/);
+  assert.match(element('#reading-note').textContent,/Couldn’t read 1 other row/);
+  assert(!element('#linetable tbody').innerHTML.includes('Maple Street'));
 
   env.newFile = filename('receipt.txt','text/plain','SYNTHETIC MEDICAL RECEIPT\nTOTAL $360.00');
   await run('handleFile(newFile)');

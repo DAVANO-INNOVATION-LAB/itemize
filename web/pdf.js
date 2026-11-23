@@ -98,7 +98,7 @@ const PDF = (() => {
   function parseContent(text) {
     const TOKEN = /\((?:\\.|[^\\()])*\)|<[0-9A-Fa-f\s]*>|\[|\]|[-+]?[\d.]+|[A-Za-z'"*]+/g;
     const rows = [];
-    let nums = [], cur = '', y = null, pendingArray = false;
+    let nums = [], cur = '', shown = '', y = null, leading = 0, pendingArray = false;
 
     const flush = () => {
       // Normalise whitespace but preserve the two-space column gaps inserted on
@@ -109,33 +109,45 @@ const PDF = (() => {
       cur = '';
     };
 
+    const nextLine = () => {
+      flush();
+      // T* (and the quote operators) advance the text line matrix by the
+      // active leading; leaving y unchanged merges distinct receipt rows.
+      y = y !== null && leading !== 0 ? y - leading : null;
+    };
+
     let m;
     while ((m = TOKEN.exec(text)) !== null) {
       const tok = m[0];
 
-      if (tok[0] === '(') { cur += decodeLiteral(tok.slice(1, -1)); continue; }
-      if (tok[0] === '<' && tok[1] !== '<') { cur += decodeHex(tok.slice(1, -1)); continue; }
+      if (tok[0] === '(') { shown += decodeLiteral(tok.slice(1, -1)); continue; }
+      if (tok[0] === '<' && tok[1] !== '<') { shown += decodeHex(tok.slice(1, -1)); continue; }
       if (tok === '[') { pendingArray = true; nums = []; continue; }
       if (tok === ']') { pendingArray = false; continue; }
       if (/^[-+]?[\d.]+$/.test(tok)) {
         const v = parseFloat(tok);
         // Inside a TJ array, large negative kerning means a word gap.
-        if (pendingArray && v <= -100) cur += ' ';
+        if (pendingArray && v <= -100) shown += ' ';
         else nums.push(v);
         continue;
       }
 
       switch (tok) {
         case 'Td': case 'TD': {
-          const ny = nums.length >= 2 ? nums[nums.length - 1] : null;
-          // A vertical move starts a new visual row; a purely horizontal one
-          // is the next column of the same row and needs a separator, or
-          // "2026-03-14" and "99283" arrive glued together as one token.
-          if (ny !== null && (y === null || Math.abs(ny) > 0.5)) flush();
-          else if (cur && !/\s$/.test(cur)) cur += '  ';
-          y = ny;
+          const dy = nums.length >= 2 ? nums[nums.length - 1] : null;
+          if (dy !== null) {
+            if (tok === 'TD') leading = -dy;
+            // Td and TD are relative to the current text line matrix; equal
+            // deltas on consecutive rows must not look like equal baselines.
+            if (Math.abs(dy) > 0.5) flush();
+            else if (cur && !/\s$/.test(cur)) cur += '  ';
+            y = (y ?? 0) + dy;
+          }
           break;
         }
+        case 'TL':
+          if (nums.length) leading = nums[nums.length - 1];
+          break;
         case 'Tm': {
           const ny = nums.length >= 6 ? nums[nums.length - 1] : null;
           if (y !== null && ny !== null && Math.abs(ny - y) > 1.5) flush();
@@ -143,8 +155,14 @@ const PDF = (() => {
           y = ny;
           break;
         }
-        case 'T*': case "'": case '"': flush(); break;
-        case 'ET': case 'BT': flush(); break;
+        case 'Tj': case 'TJ':
+          cur += shown; shown = ''; break;
+        case 'T*':
+          nextLine(); break;
+        case "'": case '"':
+          nextLine(); cur += shown; shown = ''; break;
+        case 'ET': case 'BT':
+          flush(); shown = ''; y = null; break;
         default: break;
       }
       nums = [];
@@ -189,7 +207,7 @@ const PDF = (() => {
         if (!ok) continue;
       }
       const text = latin1(data);
-      if (!/\b(Tj|TJ)\b/.test(text)) continue;      // not a content stream
+      if (!/(?:\b(?:Tj|TJ)\b|[)>]\s*['"])/.test(text)) continue;      // not a content stream
       out.push(...assemble(parseContent(text)));
     }
     return out.join('\n');
