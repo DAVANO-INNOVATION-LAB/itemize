@@ -3,7 +3,7 @@
  * All rules, parsing, action ranking and letter text live in web/rules.js,
  * which is shared with the Node parity harness so this app and the Python CLI
  * cannot silently disagree. Nothing here transmits your bill anywhere: the only
- * network request is for this page's own data/*.json at load.
+ * network requests load public reference data and optional same-origin OCR assets.
  */
 'use strict';
 
@@ -18,7 +18,24 @@ const DRAFT_KEY = 'itemize.draft.v1';
 let ref = new I.Reference({});
 let lastLines = [], lastFindings = [], lastCtx = null, eobRows = null;
 let linesConfirmed = false;
-let hasRun = false;
+let source = 'manual', fileRequest = null, retryFile = null;
+
+function focusResult() {
+  $('#result-title').focus({ preventScroll: true });
+  $('#result-title').scrollIntoView({ block: 'start' });
+}
+
+function resetReview() {
+  lastLines = []; lastFindings = []; lastCtx = null;
+  linesConfirmed = false;
+  $('#results').classList.add('hidden');
+  $('#letterbox').classList.add('hidden');
+  $('#lettertext').value = '';
+  $('#copystatus').textContent = '';
+  for (const id of ['technical', 'charges', 'exporttools']) document.getElementById(id).open = false;
+  for (const id of ['confirmlines', 'rejectlines']) document.getElementById(id).classList.add('hidden');
+  setDownloadEnabled(false);
+}
 
 /* ------------------------------------------------------------- context */
 function readContext() {
@@ -115,7 +132,8 @@ function render(lines, findings, ctx, stats) {
   $('#summary').innerHTML = stat.map(([k, v, flag]) =>
     `<div class="stat${flag ? ' flag' : ''}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('');
 
-  renderParseCheck(lines, stats);
+  renderParseCheck();
+  renderOutcome(lines, findings, ctx);
   renderActions(findings, ctx, lines);
 
   const lineRefs = (idxs) => (idxs || []).map((n) =>
@@ -150,39 +168,61 @@ function render(lines, findings, ctx, stats) {
     : '<p class="hint">No letter suggested for this combination yet.</p>';
   $$('.letterbtn').forEach((b) => b.addEventListener('click', () => showLetter(b.dataset.letter)));
 
-  $('#results').classList.remove('hidden');
-  announce(lines, findings, recoverable);
+  for (const id of ['results', 'charges']) document.getElementById(id).classList.remove('hidden');
+  const tentativePhoto = source === 'photo' && !linesConfirmed;
+  for (const id of ['technical', 'exporttools']) document.getElementById(id).classList.toggle('hidden', tentativePhoto);
+  announce(lines);
 }
 
 /* The single live region. A screen reader gets one sentence per run rather than
    the whole audit re-read every time a checkbox changes. */
-function announce(lines, findings, recoverable) {
-  const need = findings.filter((f) => f.severity === 'high').length;
-  const bits = [`${findings.length} finding${findings.length === 1 ? '' : 's'} from `
-    + `${lines.length} line${lines.length === 1 ? '' : 's'}`];
-  if (need) bits.push(`${need} marked high`);
-  if (recoverable > 0) bits.push(`${fmt(recoverable)} in disputable line items`);
+function announce(lines) {
   const el = $('#resultstatus');
-  el.textContent = (hasRun ? 'Updated: ' : '') + bits.join(', ') + '.';
-  el.classList.remove('pulse');
-  void el.offsetWidth;                       // restart the animation
-  if (hasRun) el.classList.add('pulse');
-  hasRun = true;
+  el.textContent = `${lines.length} charge${lines.length === 1 ? '' : 's'} read`
+    + (source === 'photo' && !linesConfirmed ? ' from your photo. Check the amounts to finish.' : '.');
 }
 
-function renderParseCheck(lines, stats) {
+function renderParseCheck() {
   const box = $('#parsecheck');
-  if (linesConfirmed) { box.classList.add('hidden'); return; }
-  box.classList.remove('hidden');
-  const extra = stats && stats.unread > 0
-    ? ` ${stats.unread} row${stats.unread === 1 ? '' : 's'} of what you pasted did not become
-       a charge line — that is often a header, an address or a footer, but check that it is
-       not a charge.`
-    : '';
-  $('#parsecheckbody').innerHTML = `We read <strong>${lines.length}</strong> charge
-    line${lines.length === 1 ? '' : 's'}.${extra} Layouts vary and columns get reordered, so
-    compare the <a href="#linestable">lines reviewed</a> below against your paper bill before
-    you act on anything here or send the evidence packet.`;
+  box.classList.toggle('hidden', linesConfirmed);
+  if (linesConfirmed) return;
+  $('#parsecheckbody').textContent = source === 'photo'
+    ? 'Photos can make digits or rows hard to read. Check the charges against the original to get your next step.'
+    : 'If you plan to use this review, first make sure the charges match your original document.';
+}
+
+function renderOutcome(lines, findings, ctx) {
+  const card = $('#outcome');
+  if (source === 'photo' && !linesConfirmed) {
+    card.classList.add('hidden');
+    card.replaceChildren();
+    return;
+  }
+  card.classList.remove('hidden');
+  const action = I.nextActions(findings, ctx, 1, lines)[0];
+  const structuralOnly = !lines.some((line) => line.code);
+  const headline = action ? 'Here’s what to do next' : 'No issues flagged by these checks';
+  const msg = action
+    ? plainAction(action)
+    : 'These checks can’t confirm that the bill is correct or tell you what you owe.';
+  card.innerHTML = `<h3>${headline}</h3><p>${esc(msg)}</p>`
+    + (structuralOnly ? '<p class="hint">This document doesn’t show billing codes, so we couldn’t run the code-based checks.</p>' : '')
+    + (!linesConfirmed && action ? '<p class="hint">Verify the charges before contacting your billing office.</p>' : '')
+    + (action && action.letter && linesConfirmed
+      ? '<button type="button" class="secondary" id="draftnext">Prepare a draft letter</button>' : '');
+  $('#draftnext')?.addEventListener('click', () => showLetter(action.letter));
+}
+
+function plainAction(action) {
+  return ({
+    dispute: 'Ask the billing office to explain the flagged charges. Check the details below before asking them to correct anything.',
+    itemized: 'Ask your provider for a bill that lists each service and what it costs.',
+    eob: 'Ask your billing office why its charge differs from the amount your insurer says you owe.',
+    gfe: 'Ask your billing office why this charge is higher than the estimate it gave you.',
+    nsa: 'Ask your insurer or billing office whether surprise-billing protections apply.',
+    charity: 'Ask the hospital whether it has a program that can lower the bill.',
+    cash: 'Ask the billing office to compare these charges with its published cash price.',
+  })[action.key] || action.title;
 }
 
 function renderActions(findings, ctx, lines) {
@@ -206,8 +246,6 @@ function renderActions(findings, ctx, lines) {
           ${a.letter ? `<button class="secondary letterbtn" data-letter="${a.letter}">Draft: ${esc(I.LETTERS[a.letter].label)}</button>` : ''}
         </li>`).join('')}</ol>
     </div>`;
-  $$('#actions .letterbtn').forEach((b) =>
-    b.addEventListener('click', () => showLetter(b.dataset.letter)));
 }
 
 /* ------------------------------------------------------------ evidence */
@@ -282,6 +320,8 @@ function letterText(kind) {
 }
 
 function showLetter(kind) {
+  if (!linesConfirmed) return;
+  $('#exporttools').open = true;
   openLetter = kind;
   $('#lettertext').value = letterText(kind);
   $('#letterbox').classList.remove('hidden');
@@ -320,48 +360,89 @@ function status(msg, kind) {
   el.className = 'filestatus' + (kind ? ' ' + kind : '');
 }
 
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const isPhoto = (f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|bmp|gif|heic|heif)$/i.test(f.name);
+
 async function readFileText(f) {
+  if (f.size > MAX_FILE_BYTES) throw new Error('Choose a file under 25 MB.');
   const isPdf = /\.pdf$/i.test(f.name || '') || f.type === 'application/pdf';
-  if (/^image\//.test(f.type)) {
-    throw new Error(`“${f.name}” is a photo. This tool reads text, not images — it cannot `
-      + 'read a picture of a bill. Ask your provider’s portal for a PDF or CSV, or type '
-      + 'the lines in manually (date, code, description, units, charge).');
-  }
   if (isPdf) {
-    const text = await PDF.extractText(await f.arrayBuffer());
+    let text;
+    try { text = await PDF.extractText(await f.arrayBuffer()); }
+    catch { throw new Error('We couldn’t open this PDF. Try another copy or paste the bill text.'); }
     if (!text.trim()) {
-      throw new Error(`“${f.name}” has no text layer — it is most likely a scan or photo `
-        + 'saved as a PDF. Nothing was extracted. Ask the billing office for a '
-        + 'machine-readable itemized statement, or type the lines in manually.');
+      throw new Error('This PDF looks like a scan and has no readable text. Try a clear photo of a page or a text PDF from your provider.');
     }
     return text;
+  }
+  if (isPhoto(f) || !/\.(csv|tsv|txt)$/i.test(f.name || '')) {
+    throw new Error('Choose a photo, a PDF, or a CSV, TSV or text file.');
   }
   return f.text();
 }
 
+function requestState(busy, retry) {
+  $('#dropzone').setAttribute('aria-busy', String(busy));
+  $('#cancelread').classList.toggle('hidden', !busy);
+  $('#retryread').classList.toggle('hidden', !retry);
+}
+
+function cancelFile(announce = true) {
+  if (!fileRequest) return;
+  fileRequest.abort();
+  fileRequest = null;
+  requestState(false, Boolean(retryFile));
+  if (announce) status('Reading canceled. Your previous review was not changed.');
+}
+
 async function handleFile(f) {
   if (!f) return;
+  cancelFile(false);
+  const request = new AbortController();
+  fileRequest = request;
+  retryFile = f;
+  const photo = isPhoto(f);
+  requestState(true, false);
+  status(photo ? 'Reading the photo on this device…' : 'Reading your file on this device…');
   try {
-    status(`Reading “${f.name}” on this device…`);
-    const text = await readFileText(f);
-    if (!confirmOverwrite(`Replace what is in the box with “${f.name}”?`)) {
-      status('Kept what you had. Nothing was replaced.');
+    if (f.size > MAX_FILE_BYTES) throw new Error('Choose a file under 25 MB.');
+    const text = photo ? await Receipt.readPhoto(f, request.signal) : await readFileText(f);
+    if (fileRequest !== request) return;
+    if (!confirmOverwrite('Replace the current receipt with this one?')) {
+      retryFile = null;
+      status('Kept your current receipt.');
       return;
     }
+    await referencesReady;
+    if (fileRequest !== request) return;
+    resetReview();
+    eobSequence += 1;
+    eobRows = null;
+    $('#eobstatus').textContent = '';
     $('#bill').value = text;
-    const n = text.split('\n').filter((l) => l.trim()).length;
-    status(`Read ${n} lines from “${f.name}”. Check them against your paper bill before `
-      + 'reviewing — layouts vary, and columns can be reordered.', 'ok');
+    source = photo ? 'photo' : 'file';
     runAudit();
+    focusResult();
+    status('');
+    retryFile = null;
   } catch (err) {
-    status(err.message, 'warn');
+    if (fileRequest === request) status(err.message, 'warn');
+  } finally {
+    if (fileRequest === request) {
+      fileRequest = null;
+      requestState(false, Boolean(retryFile));
+    }
   }
 }
 
+let eobSequence = 0;
 async function handleEob(f) {
   if (!f) return;
+  const sequence = ++eobSequence;
   try {
+    if (isPhoto(f)) throw new Error('Choose a text PDF or CSV for your insurer’s statement.');
     const text = await readFileText(f);
+    if (sequence !== eobSequence) return;
     eobRows = I.parseEob(text);
     if (!eobRows.length) {
       $('#eobstatus').textContent = `Could not read any rows from “${f.name}”. `
@@ -375,6 +456,7 @@ async function handleEob(f) {
     $('#eobstatus').className = 'filestatus ok';
     if (lastLines.length) runAudit();
   } catch (err) {
+    if (sequence !== eobSequence) return;
     $('#eobstatus').textContent = err.message;
     $('#eobstatus').className = 'filestatus warn';
   }
@@ -391,21 +473,17 @@ function runAudit() {
   lastLines = I.parseBill(text);
   lastCtx = readContext();
   if (!lastLines.length) {
-    $('#findings').innerHTML = `<div class="finding warn"><span class="badge">Review</span>
-      <h4>Could not read any charge lines</h4>
-      <p>Expected a table with code, quantity and charge columns, or bill text copied
-      from a PDF. Try the example button to see a working format.</p></div>`;
-    $('#summary').innerHTML = '';
-    $('#actions').innerHTML = '';
-    $('#linetable tbody').innerHTML = '';
-    $('#letters').innerHTML = '';
-    $('#parsecheck').classList.add('hidden');
-    $('#resultstatus').textContent = 'No charge lines could be read from what you pasted.';
+    $('#outcome').innerHTML = '<h3>We couldn’t find individual charges</h3>'
+      + '<p>If this receipt only shows a total, ask your provider for a bill that lists each charge. '
+      + 'If you’re using a photo, try a clearer picture of the full page.</p>';
+    $('#outcome').classList.remove('hidden');
+    for (const id of ['parsecheck', 'technical', 'charges', 'exporttools']) document.getElementById(id).classList.add('hidden');
+    $('#resultstatus').textContent = 'No individual charges read.';
     $('#results').classList.remove('hidden');
     setDownloadEnabled(false);
     return;
   }
-  lastFindings = I.audit(lastLines, ref, lastCtx, eobRows);
+  lastFindings = source === 'photo' && !linesConfirmed ? [] : I.audit(lastLines, ref, lastCtx, eobRows);
   render(lastLines, lastFindings, lastCtx, parseStats(text, lastLines));
   setDownloadEnabled(linesConfirmed);
   persist();
@@ -413,6 +491,9 @@ function runAudit() {
 
 function setDownloadEnabled(on) {
   $('#download').disabled = !on;
+  $('#print').disabled = !on;
+  $('#results').classList.toggle('verified', on);
+  $$('.letterbtn').forEach((button) => { button.disabled = !on; });
   $('#downloadhint').textContent = on
     ? 'You confirmed the lines match your bill.'
     : 'Confirm the lines above match your bill to enable the packet.';
@@ -426,7 +507,7 @@ function persist() {
   if (!$('#keep').checked) return;
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
-      bill: $('#bill').value,
+      bill: $('#bill').value, source,
       ctx: {
         insured: (document.querySelector('input[name="insured"]:checked') || {}).value || '',
         deductible: (document.querySelector('input[name="deductible"]:checked') || {}).value || '',
@@ -460,6 +541,7 @@ function restore() {
   try { d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (err) { d = null; }
   if (!d) return false;
   $('#keep').checked = true;
+  source = d.source === 'photo' ? 'photo' : 'manual';
   $('#bill').value = d.bill || '';
   const c = d.ctx || {};
   const setRadio = (name, val) => {
@@ -484,48 +566,96 @@ function restore() {
 
 /* -------------------------------------------------------------- events */
 $('#run').addEventListener('click', () => {
+  cancelFile(false);
+  resetReview();
   // A new run is a new bill; the reader has to look at the lines again.
   linesConfirmed = false;
   runAudit();
-  $('#results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!$('#results').classList.contains('hidden')) focusResult();
 });
 
-$('#file').addEventListener('change', (e) => { handleFile(e.target.files[0]); e.target.value = ''; });
+for (const [button, input] of [['takephoto', 'camera'], ['choosefile', 'file'], ['chooseeob', 'eobfile']]) {
+  document.getElementById(button).addEventListener('click', () => document.getElementById(input).click());
+}
+for (const id of ['file', 'camera']) {
+  document.getElementById(id).addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    handleFile(file);
+  });
+}
+// Keep the shorter PDF route useful when a static host did not stage photo OCR.
+fetch('vendor/ocr/tesseract.min.js', { method: 'HEAD' })
+  .then((r) => {
+    if (!r.ok || /text\/html/i.test(r.headers.get('content-type') || '')) {
+      $('#intake-note').textContent = 'Photo reading isn’t installed here. Drop a text PDF or choose a file.';
+      $('#takephoto').disabled = true;
+    }
+  }).catch(() => { /* Offline: the browser may already have the OCR assets. */ });
+$('#cancelread').addEventListener('click', () => {
+  cancelFile();
+  $('#choosefile').focus();
+});
+$('#retryread').addEventListener('click', () => handleFile(retryFile));
+$('#bill').addEventListener('input', () => {
+  cancelFile();
+  resetReview();
+});
 $('#eobfile').addEventListener('change', (e) => { handleEob(e.target.files[0]); e.target.value = ''; });
 
 $('#download').addEventListener('click', () => {
   if ($('#download').disabled) return;
   save(toMarkdown(lastLines, lastFindings, lastCtx), 'itemize-review.md');
 });
-$('#print').addEventListener('click', () => window.print());
+$('#print').addEventListener('click', () => {
+  if (!linesConfirmed) return;
+  const technical = $('#technical'), charges = $('#charges');
+  const wasOpen = [technical.open, charges.open];
+  technical.open = charges.open = true;
+  window.print();
+  [technical.open, charges.open] = wasOpen;
+});
 
+$('#reviewlines').addEventListener('click', () => {
+  $('#charges').open = true;
+  for (const id of ['confirmlines', 'rejectlines']) document.getElementById(id).classList.remove('hidden');
+  $('#linestable').focus();
+});
 $('#confirmlines').addEventListener('click', () => {
+  if (!lastLines.length || !$('#charges').open) return;
   linesConfirmed = true;
-  $('#parsecheck').classList.add('hidden');
-  setDownloadEnabled(true);
+  runAudit();
+  focusResult();
 });
 $('#rejectlines').addEventListener('click', () => {
   linesConfirmed = false;
   setDownloadEnabled(false);
-  $('#parsecheckbody').innerHTML = 'Then do not send anything based on this reading. '
-    + 'Correct the text in the box above by hand — the lines are read from what is there, '
-    + 'so fixing a row and reviewing again is enough. If the layout is defeating the '
-    + 'parser, ask the billing office for a CSV export or type the lines in as '
-    + '<code>date, code, description, units, charge</code>.';
+  $('#parsecheckbody').textContent = 'Don’t use the review yet. Try a clearer photo or a text PDF, or fix the text under “Paste bill text”.';
+  $('#manual').open = true;
 });
 
 $('#clear').addEventListener('click', () => {
+  cancelFile(false);
+  retryFile = null;
+  requestState(false, false);
   $('#bill').value = '';
-  $('#results').classList.add('hidden');
-  $('#letterbox').classList.add('hidden');
-  lastLines = []; lastFindings = []; eobRows = null;
-  linesConfirmed = false; hasRun = false;
+  resetReview();
+  source = 'manual'; eobSequence += 1; eobRows = null;
   status(''); $('#eobstatus').textContent = '';
   if ($('#keep').checked) persist();
 });
 
 $('#demo').addEventListener('click', () => {
   if (!confirmOverwrite('Replace what is in the box with the example bill?')) return;
+  cancelFile(false);
+  retryFile = null;
+  requestState(false, false);
+  resetReview();
+  source = 'manual';
+  eobSequence += 1;
+  eobRows = null;
+  status('');
+  $('#eobstatus').textContent = '';
   $('#bill').value = `Date of Service,Code,NDC,Description,Qty,Charges
 2026-03-14,99283,,EMERGENCY DEPT VISIT LEVEL 3,1,"1,842.00"
 2026-03-14,J1885,00409-3799-01,KETOROLAC TROMETHAMINE INJ 15MG,2,180.00
@@ -538,7 +668,7 @@ $('#demo').addEventListener('click', () => {
 2026-03-14,E0114,,CRUTCHES UNDERARM PAIR,1,124.00`;
   linesConfirmed = false;
   runAudit();
-  $('#results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!$('#results').classList.contains('hidden')) focusResult();
 });
 
 $('#keep').addEventListener('change', () => {
@@ -577,17 +707,18 @@ function flashTarget() {
   const row = document.getElementById(`line-${m[1]}`);
   if (!row) return;
   $$('#linetable tr.flash').forEach((r) => r.classList.remove('flash'));
+  $('#charges').open = true;
   row.classList.add('flash');
   row.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 /* --------------------------------------------------------------- boot */
-Promise.all(['hcpcs', 'asp', 'dmepos', 'nadac', 'drg', 'states', 'manifest'].map((n) =>
+const referencesReady = Promise.all(['hcpcs', 'asp', 'dmepos', 'nadac', 'drg', 'states', 'manifest'].map((n) =>
   fetch(`data/${n}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
 )).then(([hcpcs, asp, dmepos, nadac, drg, states, manifest]) => {
   ref = new I.Reference({ hcpcs, asp, dmepos, nadac, drg, states, manifest });
   buildStateOptions(states);
-  const savedState = restore();
+  const savedState = fileRequest ? '' : restore();
   if (savedState) $('#state').value = savedState;
 
   const allStates = (states && states.states) || {};
@@ -609,7 +740,7 @@ Promise.all(['hcpcs', 'asp', 'dmepos', 'nadac', 'drg', 'states', 'manifest'].map
       + `are recorded as researched-and-none rather than left blank.`
     : 'Reference data not found — run tools/build_data.py. Structural checks still work.';
 
-  if ($('#bill').value.trim()) runAudit();
+  if (!fileRequest && $('#bill').value.trim()) runAudit();
 });
 
 if ('serviceWorker' in navigator) {

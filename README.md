@@ -9,8 +9,9 @@ Medicare allows or what pharmacies pay, and lines billed above your hospital's
 own published cash price — then produces a sourced evidence packet you can hand
 to a billing office.
 
-Runs entirely on your own machine. **Zero third-party dependencies** — that is a
-promise CI checks in a clean virtualenv, not a claim. Python 3.9+.
+Runs entirely on your own machine. The Python CLI has **zero third-party dependencies**;
+CI verifies that promise in a clean virtualenv. Optional browser photo reading uses
+pinned, same-origin OCR assets. Python 3.9+.
 
 > **Read [CAVEATS.md](CAVEATS.md) before relying on anything this tool says.**
 > It is information, not advice; a Medicare benchmark is not a price cap; and
@@ -219,12 +220,15 @@ stale files look fresh.
 **Browser:**
 
 ```bash
-python3 -m http.server 8811 --directory web
+python3 tools/prepare_ocr.py  # enables photo reading; downloads verified assets only
+python3 -m http.server 8811 --bind 127.0.0.1 --directory web
 ```
 
-Then open `http://localhost:8811`. The page is static — no backend, no upload,
-no account. It works offline once loaded, and you can host `web/` on GitHub
-Pages as-is.
+Then open `http://127.0.0.1:8811`. The page is static: no backend, no upload,
+and no account. For static hosting with photo support, run the preparation command
+before publishing the complete `web/` directory, including `web/vendor/ocr/`.
+The Python/text-PDF flows do not need the OCR setup. Photo reading may need one
+online use to cache the worker and English model for offline use.
 
 ### Your hospital's own prices
 
@@ -276,16 +280,18 @@ python3 -m itemize.cli teach score ed-visit                  # what the engine c
 being solvable, which is a more legible signal than a rule-level unit test
 because it names the thing a reader would no longer be told.
 
-**Accepted inputs:** CSV/TSV, plain text pasted from a statement, and **PDF**.
+**Accepted inputs:** English receipt photos (with OCR assets staged), text-layer PDFs,
+CSV/TSV, and pasted bill text.
 Recognised columns include date, code, **NDC**, description, units, unit price,
 charge, revenue code and modifiers, in any order.
-PDFs are read on-device by `web/pdf.js`, a dependency-free text-layer extractor
-built on the browser's native `DecompressionStream`. Drag a file anywhere onto
-the input area, or use *Open a file…*.
+PDFs are read on-device by `web/pdf.js`. Start with **Take a photo** or
+**Choose a file**; you can also drop the file onto the receipt panel. Photos
+require a quick check that the amounts match before Itemize shows findings.
 
-Photographs of bills are **not** supported, and neither are scanned PDFs — both
-lack a text layer. The tool says so plainly rather than returning an empty
-result that reads like "nothing wrong". See *Why not photos?* below.
+Image-only PDFs are not rendered for OCR. If a scan has no text layer, open
+a text PDF from your provider, add a clear picture of an individual page, or
+paste the bill text. A receipt showing only a total cannot support a
+line-by-line review. See *Photo reading and verification* below.
 
 ## The CPT problem, and how this handles it
 
@@ -310,21 +316,20 @@ python3 -m itemize.cli audit bill.csv --ncci -o review.md
 The file URLs behind CMS's click-through are trivially reachable without it.
 We don't use them that way. See [NOTICE.md](NOTICE.md).
 
-## Why not photos?
+## Photo reading and verification
 
-Reading a photo of a bill needs OCR, and OCR of a dense table on a phone camera
-gets digits wrong. `$1,842.00` misread as `$1,042.00` produces a confident,
-sourced, **wrong** dispute — which costs the reader the credibility they may
-only get to spend once with a billing office. The failure is silent and looks
-exactly like a success.
+With the optional assets staged, Itemize reads English receipt photos in a local
+browser worker. The browser fetches a pinned Tesseract.js engine and English
+model from the same static app origin. It never sends receipt bytes to an OCR
+service. The prepare script checks SHA-512 integrity for every upstream archive
+and copies only named files. It does not install npm packages or execute their
+scripts. Camera capture depends on device/browser support; the file picker
+works for an existing photo. Use JPEG or PNG if the browser cannot open HEIC.
 
-Adding it would also mean vendoring ~15 MB of WASM OCR assets to keep the
-"never leaves your device" promise, since sending the image to an OCR API would
-break it outright.
-
-If OCR is added later, the right shape is **assisted transcription**: extracted
-text lands in the editable box for the reader to correct, and never runs
-straight through to findings.
+A camera can miss lines and confuse digits. Itemize shows the charges it could
+read and makes you compare them with the original before it audits a photo.
+It never assumes the amount on a photo is what you owe. Evidence exports still
+require confirmation for other input formats too.
 
 ## Honest limitations
 
@@ -392,6 +397,8 @@ itemize/teaching.py   practice bills with seeded errors, and the key
 itemize/cli.py        command line
 web/rules.js          the same engine for the browser AND the parity harness
 web/pdf.js            dependency-free PDF text-layer extractor
+web/receipt.js        optional same-origin photo OCR adapter
+tools/prepare_ocr.py verified static OCR asset staging
 web/app.js            DOM and interaction only
 web/states.json       hand-curated state law (see the honesty rules above)
 web/sw.js             service worker: network-first, so updates actually land

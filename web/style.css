@@ -409,3 +409,51 @@ h3 { font-family: Georgia, serif; font-weight: 600; font-size: 1.08rem; margin: 
   h2 { font-size: 12pt; margin-top: 1.2rem; }
   .disclaimer, footer { border: 1px solid #999; break-inside: avoid; }
 }
+
+/* Receipt-first view. Technical detail stays a click away, not between the
+   reader and their receipt. */
+.wrap { max-width: 780px; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  margin: 0 0 1.8rem; padding: .2rem 0 1.1rem; }
+.wordmark { text-decoration: none; color: var(--ink); font-size: 1.1rem; font-weight: 750; }
+.wordmark span { display: inline-grid; place-items: center; border-radius: 9px;
+  background: var(--accent); color: var(--surface); width: 1.8rem; height: 1.8rem; margin-right: .25rem; }
+.private-label { color: var(--ink-soft); font-size: .8rem; }
+#dropzone { border-radius: 20px; padding: 3rem 1.5rem 2rem; text-align: center;
+  background: var(--surface); border: 1px dashed var(--accent);
+  box-shadow: 0 7px 24px #00000008; }
+#dropzone.over { background: var(--accent-soft); outline-offset: 3px; }
+.receipt-icon { display: grid; place-items: center; margin: 0 auto 1.1rem;
+  width: 3.35rem; height: 3.35rem; border-radius: 16px;
+  background: var(--accent-soft); color: var(--accent); font-size: 1.6rem; }
+#intake-title { font-size: clamp(1.9rem, 6vw, 3.2rem); line-height: 1.14;
+  letter-spacing: -.038em; margin: 0 0 .7rem; text-wrap: balance; }
+.receipt-intake .tagline { max-width: 39ch; margin: auto; text-wrap: balance; }
+.receipt-buttons { justify-content: center; margin: 1.55rem auto .8rem; gap: .65rem; }
+.receipt-buttons button { min-height: 46px; min-width: 9rem; font-weight: 650; border-radius: 10px; }
+.receipt-buttons .primary { color: var(--surface); }
+.intake-note { margin: 0; }
+.privacy-caption { margin: .8rem 0 1.6rem; text-align: center; font-size: .83rem; color: var(--ink-soft); }
+.filestatus:empty { display: none; }
+.disclosure { border: 1px solid var(--line); border-radius: 11px; background: var(--surface); margin: .65rem 0; }
+.disclosure > summary { cursor: pointer; font-weight: 600; padding: .8rem 1rem; }
+.disclosure > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 11px; }
+.detail-body { padding: .1rem 1rem 1.1rem; }
+.outcome { margin: .65rem 0 1rem; border-radius: 14px; background: var(--accent-soft); padding: 1.15rem 1.25rem; }
+.outcome h3 { margin: 0 0 .45rem; font-size: 1.35rem; }
+.outcome p { margin: 0; max-width: 63ch; }
+.outcome p + p, .outcome button { margin-top: .65rem; }
+.outcome .hint { margin-top: .6rem; }
+.resultstatus { padding: 0; }
+@media (max-width: 640px) {
+  .topbar { margin-bottom: 1.1rem; }
+  #dropzone { padding: 2rem 1.1rem 1.45rem; }
+  .receipt-buttons { max-width: 20rem; }
+  .intake-note { font-size: .8rem; }
+}
+@media print {
+  .topbar, .privacy-caption, #manual, #settings, main > details, #exporttools { display: none !important; }
+  #results:not(.verified) { display: none !important; }
+  #technical > summary, #charges > summary { display: none; }
+  #technical::details-content, #charges::details-content { content-visibility: visible !important; }
+}
