@@ -220,15 +220,16 @@ stale files look fresh.
 **Browser:**
 
 ```bash
-python3 tools/prepare_ocr.py  # enables photo reading; downloads verified assets only
+python3 tools/prepare_ocr.py  # stages verified photo and PDF reading assets
 python3 -m http.server 8811 --bind 127.0.0.1 --directory web
 ```
 
 Then open `http://127.0.0.1:8811`. The page is static: no backend, no upload,
 and no account. For static hosting with photo support, run the preparation command
 before publishing the complete `web/` directory, including `web/vendor/ocr/`.
-The Python/text-PDF flows do not need the OCR setup. Photo reading may need one
-online use to cache the worker and English model for offline use.
+The staged PDF.js reader supports more embedded fonts than the built-in basic
+decoder. The Python CLI does not require these browser assets. Photo and richer
+PDF reading may need one online use to cache their assets for offline use.
 
 ### Your hospital's own prices
 
@@ -284,7 +285,8 @@ because it names the thing a reader would no longer be told.
 CSV/TSV, and pasted bill text.
 Recognised columns include date, code, **NDC**, description, units, unit price,
 charge, revenue code and modifiers, in any order.
-PDFs are read on-device by `web/pdf.js`. Start with **Take a photo** or
+PDF text is read on-device. When staged, the browser uses same-origin PDF.js;
+otherwise it can read simple text PDFs using a basic local decoder. Start with **Take a photo** or
 **Choose a file**; you can also drop the file onto the receipt panel. Photos
 require a quick check that the amounts match before Itemize shows findings.
 
@@ -342,10 +344,11 @@ Read these before trusting the output.
 * **No findings does not mean the bill is correct.** It means these checks did
   not fire. CPT-coded lines are not benchmarked in the open tier at all.
 * **Parsing is best-effort.** Bills arrive as CSV exports, as PDFs with wildly
-  varying layouts, and as text mangled out of both. Lines that cannot be read are
-  surfaced, never silently dropped — but check the "Lines reviewed" table against
-  your paper bill. The PDF extractor handles text-layer PDFs only; it does not
-  handle encrypted PDFs or CID fonts with custom encodings.
+  varying layouts, and as text mangled out of both. Check the charges read against
+  your original; the tool may miss or misread some. Image-only PDFs do not expose
+  text, locked PDFs may require an unprotected copy, and the basic decoder
+  (including the CLI) cannot read some embedded-font PDFs. The staged browser
+  reader handles more text encodings, but does not guarantee a successful read.
 * **This is information, not advice.** Not legal, medical or financial advice.
 * **Reference data goes stale.** CMS updates HCPCS, ASP and DMEPOS quarterly.
   Re-run `tools/build_data.py`; the manifest records when you last did.
@@ -396,9 +399,10 @@ itemize/build_data.py fetch CMS files, filter to the public-domain subset
 itemize/teaching.py   practice bills with seeded errors, and the key
 itemize/cli.py        command line
 web/rules.js          the same engine for the browser AND the parity harness
-web/pdf.js            dependency-free PDF text-layer extractor
+web/pdf.js            browser PDF text adapter and basic fallback
+web/pdf_text.mjs      optional same-origin PDF.js text extraction
 web/receipt.js        optional same-origin photo OCR adapter
-tools/prepare_ocr.py verified static OCR asset staging
+tools/prepare_ocr.py verified static photo and PDF reading assets
 web/app.js            DOM and interaction only
 web/states.json       hand-curated state law (see the honesty rules above)
 web/sw.js             service worker: network-first, so updates actually land

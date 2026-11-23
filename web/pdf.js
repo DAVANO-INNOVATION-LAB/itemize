@@ -1,4 +1,4 @@
-/* Minimal PDF text-layer extractor — no dependencies.
+/* PDF text-layer reader: on-device PDF.js when prepared, basic fallback.
  *
  * Most bills a hospital portal hands you are PDFs with a real text layer, so
  * they can be read exactly rather than guessed at by OCR. This pulls that layer
@@ -7,11 +7,19 @@
  * Deliberate limits: this reads text-layer PDFs only. Scanned/photographed
  * PDFs have no text layer and will return nothing — the caller must say so
  * plainly rather than presenting an empty result as "no charges found".
- * Encrypted PDFs and CID/Type0 fonts with custom encodings are not handled.
+ * The basic fallback cannot decode CID/Type0 fonts with custom encodings.
  */
 'use strict';
 
 const PDF = (() => {
+  // Capture the classic script URL now; currentScript is null in async work.
+  const scriptUrl = typeof document !== 'undefined' && document.currentScript?.src;
+  let robustModule;
+  function pdfError(code, message) {
+    const err = new Error(message);
+    err.code = code;
+    return err;
+  }
   const latin1 = (bytes) => {
     let s = '';
     const CHUNK = 0x8000;
@@ -188,7 +196,7 @@ const PDF = (() => {
     return lines.filter((l) => l.trim());
   }
 
-  async function extractText(arrayBuffer) {
+  async function extractBasic(arrayBuffer) {
     const bytes = new Uint8Array(arrayBuffer);
     if (latin1(bytes.subarray(0, 5)) !== '%PDF-') throw new Error('not a PDF file');
     if (/\/Encrypt\b/.test(latin1(bytes.subarray(0, Math.min(bytes.length, 4096))))) {
@@ -211,6 +219,34 @@ const PDF = (() => {
       out.push(...assemble(parseContent(text)));
     }
     return out.join('\n');
+  }
+
+
+  async function extractText(arrayBuffer, signal) {
+    const bytes = new Uint8Array(arrayBuffer);
+    if (bytes.length > 25 * 1024 * 1024) {
+      throw pdfError('PDF_LIMIT', 'This PDF exceeds the 25 MB text-reading limit.');
+    }
+    if (latin1(bytes.subarray(0, 5)) !== '%PDF-') throw new Error('not a PDF file');
+    if (scriptUrl) {
+      if (!robustModule) {
+        robustModule = import(new URL('pdf_text.mjs', scriptUrl).href).catch(() => null);
+      }
+      const adapter = await robustModule;
+      if (adapter) {
+        try { return await adapter.extractPdfText(bytes, signal); }
+        catch (error) {
+          if (error?.code !== 'PDF_ASSETS_REQUIRED') throw error;
+        }
+      }
+    }
+    // The small extractor cannot map CID character codes. Never return a
+    // plausible-looking misread from a document that may use such fonts.
+    const info = latin1(bytes);
+    if (/\/(?:Type0|CIDFontType[02]|Identity-[HV]|ToUnicode|ObjStm)\b/.test(info)) {
+      throw pdfError('PDF_ASSETS_REQUIRED', 'This PDF needs the prepared local PDF reader to decode its fonts.');
+    }
+    return extractBasic(arrayBuffer);
   }
 
   return { extractText };

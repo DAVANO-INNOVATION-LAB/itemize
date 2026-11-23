@@ -272,7 +272,7 @@ function renderOutcome(lines, findings, ctx) {
     // Amount alone cannot establish even an apparent duplicate: require a
     // matching billing code or a matching, nonempty receipt description.
     return charges.every((line) => line.code)
-      || new Set(charges.map((line) => line.desc.trim().toLowerCase())).size === 1
+      || new Set(charges.map((line) => line.desc.trim().replace(/\s+/g, ' ').toLowerCase())).size === 1
         && Boolean(charges[0]?.desc.trim());
   });
   const important = findings.find((f) => ['high', 'warn', 'notice'].includes(f.severity)
@@ -288,9 +288,9 @@ function renderOutcome(lines, findings, ctx) {
     headline = duplicate.lines.length === 2 ? 'A charge appears twice' : 'A charge appears more than once';
     msg = 'Ask the billing office whether these entries are for separate services. If it was one service, ask them to correct the repeated charge.';
   } else if (action) {
-    label = 'One next step';
+    label = action.key === 'itemized' ? 'Charges read' : 'One next step';
     headline = {
-      itemized: 'Ask for an itemized bill', eob: 'Check why the amounts differ',
+      itemized: 'We read the charges', eob: 'Check why the amounts differ',
       dispute: 'Ask about these charges', gfe: 'Check your original estimate',
       nsa: 'Ask about surprise billing', charity: 'Ask about financial assistance',
       cash: 'Ask for the cash price',
@@ -308,8 +308,8 @@ function renderOutcome(lines, findings, ctx) {
       ? `<div class="flagged-charge"><span>${esc(readableDescription(affected))}</span><strong>${esc(fmt(affected.charge))}${leadDuplicate ? ' per entry' : ''}</strong></div>`
       : '')
     + `<p>${esc(msg)}</p>`
-    + (structuralOnly ? '<p class="hint">This document doesn’t show billing codes, so those checks couldn’t run.</p>' : '')
-    + (action && action.letter && linesConfirmed && (!leadDuplicate || action.key === 'dispute')
+    + (structuralOnly && action?.key !== 'itemized' ? '<p class="hint">This document doesn’t show billing codes, so those checks couldn’t run.</p>' : '')
+    + (action && action.key !== 'itemized' && action.letter && linesConfirmed && (!leadDuplicate || action.key === 'dispute')
       ? '<button type="button" class="secondary" id="draftnext">Prepare a draft letter</button>' : '');
   $('#draftnext')?.addEventListener('click', () => showLetter(action.letter));
 }
@@ -317,7 +317,7 @@ function renderOutcome(lines, findings, ctx) {
 function plainAction(action) {
   return ({
     dispute: 'Ask the billing office to explain the flagged charges. Check the details below before asking them to correct anything.',
-    itemized: 'Ask your provider for a bill that lists each service and what it costs.',
+    itemized: 'Some billing checks need service codes. If you want a deeper review, ask your provider for those codes.',
     eob: 'Ask your billing office why its charge differs from the amount your insurer says you owe.',
     gfe: 'Ask your billing office why this charge is higher than the estimate it gave you.',
     nsa: 'Ask your insurer or billing office whether surprise-billing protections apply.',
@@ -465,14 +465,32 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const isPdf = (f) => /\.pdf$/i.test(f.name || '') || f.type === 'application/pdf';
 const isPhoto = (f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|bmp|gif|heic|heif)$/i.test(f.name);
 
-async function readFileText(f) {
+async function readFileText(f, signal, forEob = false) {
   if (f.size > MAX_FILE_BYTES) throw new Error('Choose a file under 25 MB.');
   if (isPdf(f)) {
     let text;
-    try { text = await PDF.extractText(await f.arrayBuffer()); }
-    catch { throw new Error('We couldn’t open this PDF. Try another copy or paste the bill text.'); }
+    try { text = await PDF.extractText(await f.arrayBuffer(), signal); }
+    catch (error) {
+      if (error?.code === 'PDF_ABORT') throw error;
+      if (error?.code === 'PDF_ASSETS_REQUIRED') {
+        throw new Error('This copy of Itemize couldn’t decode the PDF text. '
+          + (forEob ? 'Try another copy from your insurer.'
+            : 'Try another copy of the bill or take a clear photo of the page.'));
+      }
+      if (error?.code === 'PDF_PASSWORD') {
+        throw new Error('This PDF is password protected. Open it first or choose an unprotected copy.');
+      }
+      if (error?.code === 'PDF_LIMIT') {
+        throw new Error('This PDF is too large or complex to read here. Try a copy with fewer pages.');
+      }
+      throw new Error(forEob
+        ? 'We couldn’t open this PDF. Try another copy or spreadsheet from your insurer.'
+        : 'We couldn’t open this PDF. Try another copy or paste the bill text.');
+    }
     if (!text.trim()) {
-      throw new Error('This PDF looks like a scan and has no readable text. Try a clear photo of a page or a text PDF from your provider.');
+      throw new Error('This PDF has no readable text. '
+        + (forEob ? 'Try a text PDF or spreadsheet from your insurer.'
+          : 'Try a clear photo of the page or a text PDF from your provider.'));
     }
     return text;
   }
@@ -509,7 +527,7 @@ async function handleFile(f) {
   status(photo ? 'Reading the photo on this device…' : 'Reading your file on this device…');
   try {
     if (f.size > MAX_FILE_BYTES) throw new Error('Choose a file under 25 MB.');
-    const text = photo ? await Receipt.readPhoto(f, request.signal) : await readFileText(f);
+    const text = photo ? await Receipt.readPhoto(f, request.signal) : await readFileText(f, request.signal);
     if (fileRequest !== request) return;
     if (!replacing && !confirmOverwrite('Replace the current receipt with this one?')) {
       retryFile = null;
@@ -544,7 +562,7 @@ async function handleEob(f) {
   const sequence = ++eobSequence;
   try {
     if (isPhoto(f)) throw new Error('Choose a text PDF or CSV for your insurer’s statement.');
-    const text = await readFileText(f);
+    const text = await readFileText(f, undefined, true);
     if (sequence !== eobSequence) return;
     eobRows = I.parseEob(text);
     if (!eobRows.length) {

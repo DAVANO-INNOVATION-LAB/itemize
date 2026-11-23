@@ -1,4 +1,4 @@
-"""Stage pinned browser OCR assets. Run at build/preview time, not at runtime.
+"""Stage pinned browser OCR and PDF text assets. Run at build/preview time, not at runtime.
 
 No npm install or package scripts are needed. Each archive is verified before
 individual known members are copied. The running browser requests assets
@@ -8,6 +8,7 @@ import argparse
 import base64
 import hashlib
 import io
+import re
 import tarfile
 import urllib.request
 from pathlib import Path
@@ -37,13 +38,22 @@ ASSETS = (
         "mbTumm6KQPUHyzTPQaF3ObXYnx0SqqfV2nabqFVQBwD6Kl7PhGSLSzOlfFTWy0P3BjghaSKA2W9GB19Jk+ZcTg==",
         {"4.0.0_best_int/eng.traineddata.gz": "eng.traineddata.gz", "README.md": "eng.README.md"},
     ),
+    (
+        "pdfjs-dist/-/pdfjs-dist-6.5.438.tgz",
+        "vg8Pw1x+AFKy4AMDvhuWl5cOYV8d698UoEANoFFhc79hqXDnZQqnOXoxw3HG907WHOg1JYOvLhP756boddFxpA==",
+        {
+            "legacy/build/pdf.mjs": "pdfjs/pdf.mjs",
+            "legacy/build/pdf.worker.mjs": "pdfjs/pdf.worker.mjs",
+            "LICENSE": "pdfjs/LICENSE",
+        },
+    ),
 )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=Path("web/vendor/ocr"))
-    parser.add_argument("--archives", type=Path, help="optional directory with the three named npm tarballs")
+    parser.add_argument("--archives", type=Path, help="optional directory with the named npm tarballs")
     args = parser.parse_args()
 
     files = {}
@@ -57,6 +67,12 @@ def main():
         if actual != integrity:
             raise SystemExit("SHA-512 mismatch for " + url)
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+            if url.startswith("pdfjs-dist/"):
+                members = dict(members)
+                for entry in archive.getmembers():
+                    relative = entry.name.removeprefix("package/")
+                    if re.fullmatch(r"(?:cmaps|standard_fonts)/[A-Za-z0-9_.-]+", relative):
+                        members[relative] = "pdfjs/" + relative
             for member, name in members.items():
                 entry = archive.getmember("package/" + member)
                 if not entry.isfile():
@@ -65,8 +81,10 @@ def main():
                     files[name] = obj.read()
     args.out.mkdir(parents=True, exist_ok=True)
     for name, data in files.items():
-        (args.out / name).write_bytes(data)
-    print("Verified OCR assets staged in " + str(args.out))
+        dest = args.out / name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+    print("Verified OCR and PDF assets staged in " + str(args.out))
 
 
 if __name__ == "__main__":

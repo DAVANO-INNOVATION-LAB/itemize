@@ -446,18 +446,63 @@
     };
   }
 
+  // "Total" is only an amount alias inside this explicit receipt layout.
+  function receiptHeader(parts) {
+    const cells = parts.map(v => v.toLowerCase().trim());
+    return (cells.length === 5 || (cells.length === 6 && /^[a-z][a-z -]{1,38}$/.test(cells[1])))
+      && /^(?:item |service )?description$/.test(cells[0])
+      && /^(?:qty|quantity|units)$/.test(cells.at(-4))
+      && /^(?:unit )?price$/.test(cells.at(-3))
+      && /^discounts?$/.test(cells.at(-2)) && /^(?:line )?total$/.test(cells.at(-1));
+  }
+
+  function receiptFooter(s) {
+    return /^(?:subtotal|grand\s+total|(?:balance|amount)\s+due|payment\s+(?:method|details?|information))\b/i.test(s)
+      || /^(?:paid|due|(?:sales\s+)?tax|total|paid\s+amount|amount\s+paid)\s*[:=]?\s*(?:\$|[0-9]|$)/i.test(s);
+  }
+
+  function receiptLine(s, idx) {
+    let left = normalizeMoney(s);
+    const amounts = [];
+    while (amounts.length < 3) {
+      const m = left.match(RE_CHARGE_END);
+      if (!m || !/[.$]/.test(m[1])) break;
+      amounts.unshift(money(m[1]));
+      left = left.slice(0, left.length - m[1].length).trimEnd();
+      // Some exporters show a dash in the discount cell, others omit it.
+      if (amounts.length === 1) left = left.replace(/\s[-–—]$/, '').trimEnd();
+    }
+    const q = left.match(/\s([0-9]{1,4}(?:\.[0-9]{1,3})?)$/);
+    if (!q || amounts.length < 2 || amounts.some(n => !Number.isFinite(n))) return null;
+    const units = Number(q[1]), [price, next, last] = amounts;
+    const charge = last ?? next;
+    const discount = last === undefined ? 0 : Math.abs(next);
+    const grouped = left.slice(0, q.index).trimEnd().split(/\s{2,}/);
+    const desc = grouped[0];
+    if (grouped.length > 2 || !/[A-Za-z]{2}/.test(desc) || metadata(desc)
+        || /\$/.test(desc) || !units || price < 0 || charge < 0
+        || Math.abs(Math.round(units * price * 100) - Math.round(discount * 100) - Math.round(charge * 100)) > 1) return null;
+    return {
+      idx, code:'', desc:desc.slice(0,160), units, charge, date:'',
+      modifiers:[], revenue_code:'', unit_price:0, ndc:'', suspect_columns:false,
+    };
+  }
+
   function parseText(text, stats) {
     const lines = [];
-    let rawCount = 0, ignored = 0, uncertain = 0, consumed = 0, header;
+    let rawCount = 0, ignored = 0, uncertain = 0, consumed = 0, header, receipt = false, closedReceipt = false;
     for (const raw of text.split('\n')) {
       const s = raw.trim();
       if (!s) continue;
       rawCount += 1;
       const parts = s.split(/\s{2,}/);
       const cols = parts.length > 1 ? mapHeaders(parts) : {};
-      if (billHeader(cols)) { header = [parts.length, cols]; ignored += 1; continue; }
+      if (receiptHeader(parts)) { receipt = true; closedReceipt = false; header = undefined; ignored += 1; continue; }
+      if (billHeader(cols)) { receipt = false; closedReceipt = false; header = [parts.length, cols]; ignored += 1; continue; }
+      if (receipt && receiptFooter(s)) { closedReceipt = true; ignored += 1; continue; }
       if (metadata(s)) { ignored += 1; continue; }
-      const line = header ? alignedLine(parts, header, lines.length + 1, s) : textLine(s, lines.length + 1);
+      const line = receipt ? (closedReceipt ? null : receiptLine(s, lines.length + 1))
+        : header ? alignedLine(parts, header, lines.length + 1, s) : textLine(s, lines.length + 1);
       if (line) { lines.push(line); consumed += 1; }
       else if (RE_CHARGE_END.test(normalizeMoney(s)) || (s.match(RE_DATEISH) || {}).index === 0) uncertain += 1;
     }
@@ -555,9 +600,10 @@
   function ruleExactDuplicates(lines) {
     const groups = {};
     for (const l of lines) {
-      if (!l.code && !l.desc) continue;
-      const k = [(l.code || '').toUpperCase(), (l.date || '').trim(),
-        l.charge.toFixed(2), g(l.units)].join('|');
+      if (!l.code && !(l.desc || '').trim()) continue;
+      const code = (l.code || '').toUpperCase();
+      const descriptionKey = code ? '' : (l.desc || '').trim().replace(/\s+/g, ' ').toLowerCase();
+      const k = JSON.stringify([code, (l.date || '').trim(), l.charge.toFixed(2), g(l.units), descriptionKey]);
       (groups[k] = groups[k] || []).push(l);
     }
     const out = [];

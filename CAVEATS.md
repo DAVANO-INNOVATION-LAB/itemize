@@ -209,11 +209,13 @@ the date in `web/data/manifest.json` and may change.
   the local OCR assets. A camera can miss lines or get digits wrong; Itemize
   does not audit a photo or offer an export until you check the amounts against
   the original. See *Photo reading and verification* in the README.
-* Encrypted PDFs and CID/Type0 fonts with custom encodings are not handled.
+* Locked PDFs may need an unprotected copy. The basic decoder and CLI cannot
+  read some CID/Type0 fonts. The optional staged browser PDF.js reader supports
+  more embedded-font text layouts without uploading the document.
 * Column detection on loose text is heuristic. **Check the "Lines reviewed"
   table against your paper bill** before acting on anything.
-* Lines that cannot be read are surfaced, never silently dropped — but a
-  mis-parsed line is still possible.
+* The parser flags rows it recognizes as possible charges but cannot verify.
+  It can still miss or misread rows, so compare with the original.
 
 ---
 

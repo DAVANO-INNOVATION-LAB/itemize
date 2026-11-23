@@ -129,6 +129,14 @@ async function main() {
   assert(!element('#outcome').classList.contains('hidden'));
   assert(element('#download').disabled);
 
+  run("globalThis.restorePdf = PDF.extractText; PDF.extractText = async () => { throw Object.assign(new Error('low level'), {code: 'PDF_ASSETS_REQUIRED'}); };");
+  env.newFile = filename('synthetic-unsupported.pdf','application/pdf',pdf);
+  await run('handleFile(newFile)');
+  assert.match(element('#filestatus').textContent,/couldn’t decode the PDF text/);
+  assert(!element('#filestatus').textContent.includes('low level'));
+  assert(!element('#resultstatus').textContent.includes('No charges reviewed'));
+  run("PDF.extractText = globalThis.restorePdf;");
+
   const addressDocument = '1 Maple Street\nSuite 1\nFairfax, VA 22030\n'
     + 'J1885 KETOROLAC 2 180.00\nTOTAL $180.00\nA line the parser cannot classify';
   env.newFile = filename('synthetic-address.txt','text/plain',addressDocument);
