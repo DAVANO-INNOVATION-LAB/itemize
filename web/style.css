@@ -457,3 +457,55 @@ h3 { font-family: Georgia, serif; font-weight: 600; font-size: 1.08rem; margin: 
   #technical > summary, #charges > summary { display: none; }
   #technical::details-content, #charges::details-content { content-visibility: visible !important; }
 }
+
+/* A single compact stage after intake, with the next action above details. */
+#results { scroll-margin-top: 1rem; }
+.result-shell { padding: 1.35rem 1.55rem 1.5rem; margin-bottom: 1rem; border: 1px solid var(--line);
+  border-radius: 20px; background: var(--surface); }
+.result-bar { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.result-label, .outcome .outcome-label { margin: 0; color: var(--accent); font-size: .73rem;
+  letter-spacing: .08em; text-transform: uppercase; font-weight: 750; }
+#reviewagain { min-height: 44px; padding: .35rem .7rem; border-color: var(--line); font-size: .86rem; }
+#result-title { margin: .65rem 0 .1rem; font-size: clamp(1.75rem, 6vw, 2.55rem);
+  line-height: 1.16; letter-spacing: -.025em; }
+#result-title:focus { outline: none; }
+.resultstatus { margin: .35rem 0 .7rem; font-size: .88rem; }
+.outcome { margin: .9rem 0 0; border: 1px solid var(--line); }
+.outcome.has-issue { border-left: 3px solid var(--accent); }
+.outcome h3 { margin: .2rem 0 .65rem; font-size: clamp(1.25rem, 4.7vw, 1.6rem); line-height: 1.2; }
+.flagged-charge { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .15rem .9rem;
+  margin: .2rem 0 .7rem; padding: .7rem 0; border-block: 1px solid var(--line); font-size: .92rem; }
+.flagged-charge strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.parsecheck { margin: .85rem 0 0; }
+.verify-charges { max-height: 15rem; margin: .75rem 0; padding: 0 .75rem; overflow: auto;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.verify-charges ol { margin: 0; padding: 0; list-style-type: none; }
+.verify-charges li { display: flex; justify-content: space-between; gap: .55rem; align-items: baseline;
+  padding: .5rem 0; font-size: .86rem; }
+.verify-charges li + li { border-top: 1px solid var(--line); }
+.verify-charges strong { color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.parsecheck .primary { color: var(--surface); }
+#dropzone .linkbtn:not(.hidden) { display: inline-block; margin: .65rem .45rem 0; }
+@media (max-width: 640px) {
+  .result-shell { padding: 1rem 1.05rem; }
+  .result-label { font-size: .65rem; }
+  .outcome { padding: .9rem 1rem; }
+}
+@media print {
+  #reviewagain, .result-label, #result-title { display: none !important; }
+  .result-shell { border: 0; padding: 0; }
+}
+
+/* Distinguish the task, the answer and the optional tools instead of stacking
+   equally weighted cards, especially on a phone in dark mode. */
+#intake-title, #result-title, .outcome h3 { font-family: inherit; font-weight: 750; }
+.result-shell { background: transparent; border: 0; padding: 0; }
+.outcome { padding: 1.1rem 1.2rem; }
+#results > .disclosure, #workspace > details:not(.intake-support) { background: transparent;
+  border: 0; border-bottom: 1px solid var(--line); border-radius: 0; margin: 0; }
+#results > .disclosure summary, #workspace > details:not(.intake-support) summary {
+  color: var(--ink-soft); padding: .65rem .3rem; font-size: .87rem; }
+#results > .disclosure[open] summary, #workspace > details[open] summary { color: var(--ink); }
+#workspace + footer { margin-top: 1.2rem; padding: .5rem 0 0; border: 0; font-size: .78rem; }
+.parsecheck { background: var(--surface); border-left: 3px solid var(--accent); border-radius: 12px; }
+.parsecheck .controls button { min-height: 44px; }

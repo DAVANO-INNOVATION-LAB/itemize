@@ -15,12 +15,12 @@
   <span class="private-label">No account needed</span>
 </header>
 
-<main aria-labelledby="intake-title">
+<main id="workspace" aria-labelledby="intake-title">
   <section id="dropzone" class="receipt-intake">
     <div class="receipt-icon" aria-hidden="true">▤</div>
     <h1 id="intake-title">Add your medical receipt.</h1>
     <p class="tagline">Take a photo or drop a PDF. We’ll read the charges and show you what needs attention.</p>
-    <div class="controls receipt-buttons">
+    <div id="receipt-controls" class="controls receipt-buttons">
       <button id="takephoto" type="button" class="primary" aria-controls="camera">Take a photo</button>
       <button id="choosefile" type="button" class="secondary" aria-controls="file">Choose a file</button>
     </div>
@@ -31,10 +31,11 @@
     <p id="filestatus" class="filestatus" role="status" aria-live="polite"></p>
     <button id="cancelread" class="linkbtn hidden" type="button">Cancel</button>
     <button id="retryread" class="linkbtn hidden" type="button">Try again</button>
+    <button id="backreview" class="linkbtn hidden" type="button">Back to current review</button>
   </section>
-  <p class="privacy-caption">Your receipt is processed on this device, not uploaded.</p>
+  <p id="privacy-caption" class="privacy-caption">Your receipt is processed on this device, not uploaded.</p>
 
-  <details id="manual" class="disclosure">
+  <details id="manual" class="disclosure intake-support">
     <summary>Paste bill text or try an example</summary>
     <div class="detail-body">
   <label for="bill" class="hidden">Itemized bill text</label>
@@ -57,18 +58,24 @@
   </details>
 
 <section id="results" class="hidden" aria-labelledby="result-title">
-  <h2 id="result-title" tabindex="-1">Your receipt review</h2>
-  <p id="resultstatus" class="resultstatus" role="status" aria-live="polite"></p>
-  <div id="parsecheck" class="parsecheck hidden">
-    <strong>Check the amounts before using this review.</strong>
-    <p id="parsecheckbody"></p>
-    <div class="controls">
-      <button id="reviewlines" type="button" class="secondary">See the charges we read</button>
-      <button id="confirmlines" type="button" class="secondary hidden">The charges match</button>
-      <button id="rejectlines" type="button" class="secondary hidden">They don’t match</button>
+  <div class="result-shell">
+    <div class="result-bar">
+      <p class="result-label">Receipts / Review</p>
+      <button id="reviewagain" class="secondary" type="button">Review another</button>
     </div>
+    <h2 id="result-title" tabindex="-1">Your receipt review</h2>
+    <p id="resultstatus" class="resultstatus" role="status" aria-live="polite"></p>
+    <div id="parsecheck" class="parsecheck hidden">
+      <strong id="verify-heading">Check the amounts match your receipt.</strong>
+      <p id="parsecheckbody"></p>
+      <div id="verify-photos" class="verify-charges" tabindex="0" aria-labelledby="verify-heading"></div>
+      <div class="controls">
+        <button id="confirmlines" type="button" class="primary">Amounts match</button>
+        <button id="rejectlines" type="button" class="secondary">Something is off</button>
+      </div>
+    </div>
+    <div id="outcome" class="outcome"></div>
   </div>
-  <div id="outcome" class="outcome"></div>
   <details id="technical" class="disclosure hidden">
     <summary>All findings and sources</summary>
     <div class="detail-body">
@@ -95,6 +102,7 @@
         <button id="download" disabled>Download the review</button>
         <button id="print" class="secondary">Print / save as PDF</button>
       </div>
+      <button id="exportverify" class="linkbtn" type="button">Check charges to unlock these tools</button>
       <p id="downloadhint" class="hint small">Confirm the charges to download or print the review.</p>
       <h3 class="lettershead">Draft letters</h3>
       <p class="hint">Check your facts before sending a letter to your billing office.</p>
@@ -117,7 +125,6 @@
   <summary>Add insurance or billing details (optional)</summary>
   <div class="detail-body">
     <p class="hint">Add these only if you want additional checks.</p>
-<p id="ctxprompt" class="ctxprompt hidden" role="status"></p>
 
 <div id="context">
   <fieldset>
@@ -181,8 +188,9 @@
 </details>
 
 <details class="disclosure">
-  <summary>Storage and limits</summary>
+  <summary>Storage, sources and limits</summary>
   <div class="detail-body">
+  <p id="provenance" class="hint">Reference data: loading…</p>
 <div class="keepbox">
   <label><input type="checkbox" id="keep"> Keep a working copy of this bill on this device</label>
   <p class="hint small">Off by default. When on, the text you pasted and the answers above
@@ -216,9 +224,7 @@
 </main>
 
 <footer>
-  <p id="provenance">Reference data: loading…</p>
-  <p>Open source. Verify anything here before relying on it — every finding names its source
-  so that you can. <a href="https://github.com/DAVANO-INNOVATION-LAB/itemize/blob/main/CAVEATS.md">Read the caveats</a>.</p>
+  <p>Open source. Information, not advice. <a href="https://github.com/DAVANO-INNOVATION-LAB/itemize/blob/main/CAVEATS.md">Read the caveats</a>.</p>
 </footer>
 
 </div>

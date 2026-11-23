@@ -1,8 +1,8 @@
 """Stage pinned browser OCR assets. Run at build/preview time, not at runtime.
 
 No npm install or package scripts are needed. Each archive is verified before
-individual known members are copied, and only first-party static assets are
-ever requested by the running browser. The Python CLI stays dependency-free.
+individual known members are copied. The running browser requests assets
+only from the same origin. The Python CLI stays dependency-free.
 """
 import argparse
 import base64

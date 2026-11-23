@@ -19,21 +19,40 @@ let ref = new I.Reference({});
 let lastLines = [], lastFindings = [], lastCtx = null, eobRows = null;
 let linesConfirmed = false;
 let source = 'manual', fileRequest = null, retryFile = null;
+let replacing = false, hasReview = false, verificationRequested = false;
+
+function showStage(stage) {
+  const reviewing = stage === 'review';
+  if (reviewing) hasReview = true;
+  $('#workspace').setAttribute('aria-labelledby', reviewing ? 'result-title' : 'intake-title');
+  for (const id of ['dropzone', 'privacy-caption', 'manual']) document.getElementById(id).classList.toggle('hidden', reviewing);
+  $('#backreview').classList.toggle('hidden', reviewing || !hasReview);
+  $('#results').classList.toggle('hidden', !reviewing);
+}
+
+function returnToIntake() {
+  replacing = hasReview;
+  showStage('intake');
+  $('#manual').open = false;
+  const button = $('#takephoto').disabled ? $('#choosefile') : $('#takephoto');
+  button.focus({ preventScroll: true });
+  window.scrollTo(0, 0);
+}
 
 function focusResult() {
   $('#result-title').focus({ preventScroll: true });
-  $('#result-title').scrollIntoView({ block: 'start' });
+  window.scrollTo(0, 0);
 }
 
 function resetReview() {
   lastLines = []; lastFindings = []; lastCtx = null;
   linesConfirmed = false;
+  hasReview = false; replacing = false; verificationRequested = false;
   $('#results').classList.add('hidden');
   $('#letterbox').classList.add('hidden');
   $('#lettertext').value = '';
   $('#copystatus').textContent = '';
   for (const id of ['technical', 'charges', 'exporttools']) document.getElementById(id).open = false;
-  for (const id of ['confirmlines', 'rejectlines']) document.getElementById(id).classList.add('hidden');
   setDownloadEnabled(false);
 }
 
@@ -132,7 +151,7 @@ function render(lines, findings, ctx, stats) {
   $('#summary').innerHTML = stat.map(([k, v, flag]) =>
     `<div class="stat${flag ? ' flag' : ''}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('');
 
-  renderParseCheck();
+  renderParseCheck(lines);
   renderOutcome(lines, findings, ctx);
   renderActions(findings, ctx, lines);
 
@@ -168,9 +187,11 @@ function render(lines, findings, ctx, stats) {
     : '<p class="hint">No letter suggested for this combination yet.</p>';
   $$('.letterbtn').forEach((b) => b.addEventListener('click', () => showLetter(b.dataset.letter)));
 
-  for (const id of ['results', 'charges']) document.getElementById(id).classList.remove('hidden');
-  const tentativePhoto = source === 'photo' && !linesConfirmed;
-  for (const id of ['technical', 'exporttools']) document.getElementById(id).classList.toggle('hidden', tentativePhoto);
+  $('#charges').classList.remove('hidden');
+  if (!replacing) showStage('review');
+  const tentative = !linesConfirmed && isTentative(lines);
+  $('#charges').classList.toggle('hidden', tentative);
+  for (const id of ['technical', 'exporttools']) document.getElementById(id).classList.toggle('hidden', tentative);
   announce(lines);
 }
 
@@ -179,36 +200,84 @@ function render(lines, findings, ctx, stats) {
 function announce(lines) {
   const el = $('#resultstatus');
   el.textContent = `${lines.length} charge${lines.length === 1 ? '' : 's'} read`
-    + (source === 'photo' && !linesConfirmed ? ' from your photo. Check the amounts to finish.' : '.');
+    + (source === 'photo' ? ' from your photo.' : '.');
 }
 
-function renderParseCheck() {
-  const box = $('#parsecheck');
-  box.classList.toggle('hidden', linesConfirmed);
-  if (linesConfirmed) return;
+function readableDescription(line) {
+  return line.desc || ref.describe(line.code) || (line.code ? 'Code ' + line.code : 'Unlabeled charge');
+}
+
+function isTentative(lines) {
+  return source === 'photo' || lines.some((line) => line.suspect_columns);
+}
+
+function renderParseCheck(lines) {
+  const needsCheck = !linesConfirmed && (verificationRequested || isTentative(lines));
+  $('#parsecheck').classList.toggle('hidden', !needsCheck);
+  if (!needsCheck) { $('#verify-photos').replaceChildren(); return; }
   $('#parsecheckbody').textContent = source === 'photo'
-    ? 'Photos can make digits or rows hard to read. Check the charges against the original to get your next step.'
-    : 'If you plan to use this review, first make sure the charges match your original document.';
+    ? 'Photo reading can miss a line or get a number wrong. Compare these charges with the original to finish.'
+    : 'Compare these charges with the original before using or sharing the review.';
+  $('#verify-photos').innerHTML = '<ol>' + lines.map((line) =>
+    `<li><span>${esc(readableDescription(line))}</span><strong>${esc(fmt(line.charge))}</strong></li>`).join('') + '</ol>';
 }
 
 function renderOutcome(lines, findings, ctx) {
   const card = $('#outcome');
-  if (source === 'photo' && !linesConfirmed) {
+  if (!linesConfirmed && isTentative(lines)) {
     card.classList.add('hidden');
     card.replaceChildren();
+    $('#result-title').textContent = source === 'photo'
+      ? 'Almost done. Check the photo.' : 'Almost done. Check the charges.';
     return;
   }
   card.classList.remove('hidden');
+  $('#result-title').textContent = 'Your receipt review';
   const action = I.nextActions(findings, ctx, 1, lines)[0];
+  const duplicate = findings.find((f) => {
+    if (f.rule !== 'exact_duplicate') return false;
+    const charges = lines.filter((line) => f.lines.includes(line.idx));
+    // Amount alone cannot establish even an apparent duplicate: require a
+    // matching billing code or a matching, nonempty receipt description.
+    return charges.every((line) => line.code)
+      || new Set(charges.map((line) => line.desc.trim().toLowerCase())).size === 1
+        && Boolean(charges[0]?.desc.trim());
+  });
+  const important = findings.find((f) => ['high', 'warn', 'notice'].includes(f.severity)
+    && !['ref_stale', 'stale_data', 'suspect_columns'].includes(f.rule));
+  const firstIssue = duplicate || important;
+  const leadDuplicate = duplicate && (!action || ['dispute', 'itemized'].includes(action.key));
+  const affected = firstIssue && lines.find((line) => firstIssue.lines.includes(line.idx));
   const structuralOnly = !lines.some((line) => line.code);
-  const headline = action ? 'Here’s what to do next' : 'No issues flagged by these checks';
-  const msg = action
-    ? plainAction(action)
-    : 'These checks can’t confirm that the bill is correct or tell you what you owe.';
-  card.innerHTML = `<h3>${headline}</h3><p>${esc(msg)}</p>`
-    + (structuralOnly ? '<p class="hint">This document doesn’t show billing codes, so we couldn’t run the code-based checks.</p>' : '')
-    + (!linesConfirmed && action ? '<p class="hint">Verify the charges before contacting your billing office.</p>' : '')
-    + (action && action.letter && linesConfirmed
+  let label = 'Review complete', headline = 'No issues found by these checks';
+  let msg = 'This doesn’t prove the bill is correct or tell you what you owe.';
+  if (leadDuplicate) {
+    label = 'One thing to check';
+    headline = duplicate.lines.length === 2 ? 'A charge appears twice' : 'A charge appears more than once';
+    msg = 'Ask the billing office whether these entries are for separate services. If it was one service, ask them to correct the repeated charge.';
+  } else if (action) {
+    label = 'One next step';
+    headline = {
+      itemized: 'Ask for an itemized bill', eob: 'Check why the amounts differ',
+      dispute: 'Ask about these charges', gfe: 'Check your original estimate',
+      nsa: 'Ask about surprise billing', charity: 'Ask about financial assistance',
+      cash: 'Ask for the cash price',
+    }[action.key] || 'Ask about this bill';
+    msg = plainAction(action);
+  } else if (important) {
+    label = 'One thing to check';
+    headline = 'Ask about a charge that stood out';
+    msg = 'Ask the billing office to explain this charge. A flag is a reason to ask, not proof of an error.';
+  }
+  const concrete = !!affected && (leadDuplicate || !action);
+  card.classList.toggle('has-issue', Boolean(firstIssue || action));
+  card.innerHTML = `<p class="outcome-label">${esc(label)}</p><h3>${esc(headline)}</h3>`
+    + (concrete
+      ? `<div class="flagged-charge"><span>${esc(readableDescription(affected))}</span><strong>${esc(fmt(affected.charge))}${leadDuplicate ? ' per entry' : ''}</strong></div>`
+      : '')
+    + `<p>${esc(msg)}</p>`
+    + (structuralOnly ? '<p class="hint">This document doesn’t show billing codes, so those checks couldn’t run.</p>' : '')
+    + (action && action.letter && linesConfirmed && (!leadDuplicate || action.key === 'dispute')
       ? '<button type="button" class="secondary" id="draftnext">Prepare a draft letter</button>' : '');
   $('#draftnext')?.addEventListener('click', () => showLetter(action.letter));
 }
@@ -382,7 +451,7 @@ async function readFileText(f) {
 }
 
 function requestState(busy, retry) {
-  $('#dropzone').setAttribute('aria-busy', String(busy));
+  $('#receipt-controls').setAttribute('aria-busy', String(busy));
   $('#cancelread').classList.toggle('hidden', !busy);
   $('#retryread').classList.toggle('hidden', !retry);
 }
@@ -408,7 +477,7 @@ async function handleFile(f) {
     if (f.size > MAX_FILE_BYTES) throw new Error('Choose a file under 25 MB.');
     const text = photo ? await Receipt.readPhoto(f, request.signal) : await readFileText(f);
     if (fileRequest !== request) return;
-    if (!confirmOverwrite('Replace the current receipt with this one?')) {
+    if (!replacing && !confirmOverwrite('Replace the current receipt with this one?')) {
       retryFile = null;
       status('Kept your current receipt.');
       return;
@@ -473,17 +542,19 @@ function runAudit() {
   lastLines = I.parseBill(text);
   lastCtx = readContext();
   if (!lastLines.length) {
-    $('#outcome').innerHTML = '<h3>We couldn’t find individual charges</h3>'
+    $('#result-title').textContent = 'Your receipt review';
+    $('#outcome').classList.remove('has-issue');
+    $('#outcome').innerHTML = '<p class="outcome-label">More information needed</p><h3>We couldn’t find individual charges</h3>'
       + '<p>If this receipt only shows a total, ask your provider for a bill that lists each charge. '
       + 'If you’re using a photo, try a clearer picture of the full page.</p>';
     $('#outcome').classList.remove('hidden');
     for (const id of ['parsecheck', 'technical', 'charges', 'exporttools']) document.getElementById(id).classList.add('hidden');
     $('#resultstatus').textContent = 'No individual charges read.';
-    $('#results').classList.remove('hidden');
+    if (!replacing) showStage('review');
     setDownloadEnabled(false);
     return;
   }
-  lastFindings = source === 'photo' && !linesConfirmed ? [] : I.audit(lastLines, ref, lastCtx, eobRows);
+  lastFindings = !linesConfirmed && isTentative(lastLines) ? [] : I.audit(lastLines, ref, lastCtx, eobRows);
   render(lastLines, lastFindings, lastCtx, parseStats(text, lastLines));
   setDownloadEnabled(linesConfirmed);
   persist();
@@ -494,6 +565,7 @@ function setDownloadEnabled(on) {
   $('#print').disabled = !on;
   $('#results').classList.toggle('verified', on);
   $$('.letterbtn').forEach((button) => { button.disabled = !on; });
+  $('#exportverify').classList.toggle('hidden', on);
   $('#downloadhint').textContent = on
     ? 'You confirmed the lines match your bill.'
     : 'Confirm the lines above match your bill to enable the packet.';
@@ -597,9 +669,17 @@ $('#cancelread').addEventListener('click', () => {
   $('#choosefile').focus();
 });
 $('#retryread').addEventListener('click', () => handleFile(retryFile));
+$('#reviewagain').addEventListener('click', returnToIntake);
+$('#backreview').addEventListener('click', () => {
+  cancelFile(false); retryFile = null; requestState(false, false); status('');
+  replacing = false;
+  showStage('review');
+  focusResult();
+});
 $('#bill').addEventListener('input', () => {
   cancelFile();
   resetReview();
+  showStage('intake');
 });
 $('#eobfile').addEventListener('change', (e) => { handleEob(e.target.files[0]); e.target.value = ''; });
 
@@ -616,22 +696,23 @@ $('#print').addEventListener('click', () => {
   [technical.open, charges.open] = wasOpen;
 });
 
-$('#reviewlines').addEventListener('click', () => {
-  $('#charges').open = true;
-  for (const id of ['confirmlines', 'rejectlines']) document.getElementById(id).classList.remove('hidden');
-  $('#linestable').focus();
+$('#exportverify').addEventListener('click', () => {
+  verificationRequested = true;
+  renderParseCheck(lastLines);
+  $('#verify-photos').focus();
 });
 $('#confirmlines').addEventListener('click', () => {
-  if (!lastLines.length || !$('#charges').open) return;
+  if (!lastLines.length || $('#parsecheck').classList.contains('hidden')) return;
   linesConfirmed = true;
+  verificationRequested = false;
   runAudit();
   focusResult();
 });
 $('#rejectlines').addEventListener('click', () => {
   linesConfirmed = false;
   setDownloadEnabled(false);
-  $('#parsecheckbody').textContent = 'Don’t use the review yet. Try a clearer photo or a text PDF, or fix the text under “Paste bill text”.';
-  $('#manual').open = true;
+  returnToIntake();
+  status('Try another photo or choose a text PDF. You can also edit the extracted text.', 'warn');
 });
 
 $('#clear').addEventListener('click', () => {
@@ -642,6 +723,7 @@ $('#clear').addEventListener('click', () => {
   resetReview();
   source = 'manual'; eobSequence += 1; eobRows = null;
   status(''); $('#eobstatus').textContent = '';
+  showStage('intake');
   if ($('#keep').checked) persist();
 });
 
@@ -721,24 +803,10 @@ const referencesReady = Promise.all(['hcpcs', 'asp', 'dmepos', 'nadac', 'drg', '
   const savedState = fileRequest ? '' : restore();
   if (savedState) $('#state').value = savedState;
 
-  const allStates = (states && states.states) || {};
-  const sc = Object.keys(allStates).length;
-  const scStd = Object.values(allStates).filter(
-    (e) => (e.charity_care || {}).state_minimum_standards).length;
-  const n = Object.keys(ref.hcpcs).length;
-  const priced = new Set([...Object.keys(ref.asp), ...Object.keys(ref.dmepos)]).size;
-  const nd = Object.keys(ref.nadac).length;
-  const dr = Object.keys(ref.drg).length;
-  $('#provenance').textContent = n
-    ? `Reference data: ${n.toLocaleString()} HCPCS Level II codes, ${priced.toLocaleString()} `
-      + `Medicare price benchmarks (Part B drugs and DMEPOS)`
-      + (nd ? `, ${nd.toLocaleString()} drug acquisition costs by NDC` : '')
-      + (dr ? `, and ${dr.toLocaleString()} national MS-DRG averages` : '')
-      + `, built ${ref.manifest.built || 'unknown'}. `
-      + `Ground-ambulance and hospital financial-assistance law verified for ${sc} `
-      + `jurisdictions; ${scStd} of them set their own assistance standards, and the rest `
-      + `are recorded as researched-and-none rather than left blank.`
-    : 'Reference data not found — run tools/build_data.py. Structural checks still work.';
+  const name = ref.manifest.built ? ` (built ${ref.manifest.built})` : '';
+  $('#provenance').textContent = Object.keys(ref.hcpcs).length
+    ? `Federal reference data is available${name}. Each finding lists its source and limits.`
+    : 'Federal reference data didn’t load. Checks like repeated charges still work.';
 
   if (!fileRequest && $('#bill').value.trim()) runAudit();
 });

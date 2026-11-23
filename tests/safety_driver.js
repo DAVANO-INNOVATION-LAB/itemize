@@ -15,7 +15,7 @@ if (input.mode === 'aggregate') {
   const nodes = new Map();
   const document = {
     querySelector(s) {
-      if (!nodes.has(s)) nodes.set(s, { innerHTML: '', textContent: '', addEventListener() {},
+      if (!nodes.has(s)) nodes.set(s, { innerHTML: '', textContent: '', addEventListener() {}, setAttribute() {}, replaceChildren() {},
         classList: { add() {}, remove() {}, toggle() {} } });
       return nodes.get(s);
     },
