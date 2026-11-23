@@ -4,14 +4,14 @@ Two input shapes, because that is what people actually have:
   * delimited (CSV/TSV) exported from a portal
   * loose text pasted out of a PDF
 
-Both are best-effort. Anything we cannot confidently read becomes a line with
-no code, which the rules engine then flags -- silence is never treated as
-"nothing wrong".
+Both are best-effort. A readable charge can lack a billing code; non-charge
+metadata and ambiguous text are never converted to money by guessing.
 """
 from __future__ import annotations
 
 import csv
 import io
+import math
 import re
 
 from .model import Line
@@ -24,7 +24,7 @@ ALIASES = {
              "procedure", "detail", "charge description"),
     "units": ("units", "unit", "qty", "quantity", "svc units", "days/units"),
     "charge": ("charge", "charges", "amount", "billed", "billed amount",
-               "total", "total charges", "line total", "amt"),
+               "total", "total charges", "line total", "amt", "provider charges", "gross charges", "charge amount"),
     "date": ("date", "service date", "date of service", "dos", "svc date"),
     "modifiers": ("modifier", "modifiers", "mod"),
     "revenue_code": ("revenue code", "rev code", "rev cd", "revcode"),
@@ -156,33 +156,34 @@ def _denul(text):
 def _map_headers(header):
     out = {}
     for i, h in enumerate(header):
-        k = (h or "").strip().lower()
+        # Clinic exports append a currency qualifier to a known heading.
+        # A phrase such as "patient responsibility amount" is not a charge.
+        k = re.sub(r"\s*\(usd\)$", "", (h or "").strip().lower())
         for field, names in ALIASES.items():
-            if field in out:
-                continue
-            if k in names or any(k == n for n in names):
-                out[field] = i
-                break
-    # second pass: substring match for headers like "total charges (usd)"
-    for i, h in enumerate(header):
-        k = (h or "").strip().lower()
-        for field, names in ALIASES.items():
-            if field in out:
-                continue
-            if any(n in k for n in names):
+            if field not in out and k in names:
                 out[field] = i
                 break
     return out
 
 
-def parse_delimited(text):
+def parse_delimited(text, stats=None):
     text = _denul(text)
-    sample = text[:4096]
-    try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=",\t|;")
-    except csv.Error:
-        dialect = csv.excel
-    rows = [r for r in csv.reader(io.StringIO(text), dialect) if any(c.strip() for c in r)]
+    # Find a real header before choosing separators. A comma in the provider
+    # address or a tab/pipe in a title is not a document delimiter.
+    delimiter = None
+    for raw in text.split("\n")[:25]:
+        for d in (",", "\t", "|", ";"):
+            if d not in raw:
+                continue
+            row = next(csv.reader([raw], delimiter=d), [])
+            if _bill_header(_map_headers(row)):
+                delimiter = d
+                break
+        if delimiter:
+            break
+    if not delimiter:
+        return []
+    rows = [r for r in csv.reader(io.StringIO(text), delimiter=delimiter) if any(c.strip() for c in r)]
     if not rows:
         return []
 
@@ -190,12 +191,14 @@ def parse_delimited(text):
     hdr_i, cols = None, {}
     for i, row in enumerate(rows[:25]):
         m = _map_headers(row)
-        if "charge" in m and ("code" in m or "desc" in m):
+        if _bill_header(m):
             hdr_i, cols = i, m
             break
     if hdr_i is None:
         return []
 
+    if stats is not None:
+        stats.update(mode="delimited", raw=len(rows), ignored=hdr_i + 1)
     width = len(rows[hdr_i])
     lines = []
     for row in rows[hdr_i + 1:]:
@@ -208,7 +211,14 @@ def parse_delimited(text):
         if not charge_raw and not code and not desc:
             continue
         # Skip obvious total/subtotal rows.
-        if not code and re.search(r"\b(total|balance|subtotal|amount due)\b", desc, re.I):
+        if not code and (_metadata(desc) or re.search(r"^balance\b", desc, re.I)):
+            if stats is not None:
+                stats["ignored"] += 1
+            continue
+        charge_raw = _normalize_money(charge_raw)
+        if not RE_MONEY_FIELD.fullmatch(charge_raw) or not (code or desc):
+            if charge_raw and stats is not None:
+                stats["uncertain"] = stats.get("uncertain", 0) + 1
             continue
         mods = [m.strip().upper() for m in re.split(r"[,\s/]+", g("modifiers")) if m.strip()]
         lines.append(Line(
@@ -223,134 +233,229 @@ def parse_delimited(text):
     return lines
 
 
-def _strip_trailing_number(desc):
-    """Remove a trailing quantity/amount from a description.
+# A charge must be a complete money field, never a substring of a date,
+# house number, ZIP, barcode or dosage. Cap digits before numeric conversion.
+_AMOUNT = r"(?:[0-9]{1,12}|[0-9]{1,3}(?:,[0-9]{3}){1,3})(?:\.[0-9]{2})?"
+RE_MONEY_FIELD = re.compile(r"(?:-?\$?[ \t]?" + _AMOUNT + r"|\(\$?[ \t]?" + _AMOUNT + r"\))")
+RE_CHARGE_END = re.compile(r"(?:^|[ \t])(" + RE_MONEY_FIELD.pattern + r")$")
+RE_CODEISH = re.compile(r"^[A-Za-z]{0,4}[0-9]{3,6}$")
+RE_STREET = re.compile(
+    r"^\s*[0-9]+[A-Za-z]?(?:[-/][0-9]+)?\s+.+?\b(?:street|st\.?|avenue|ave\.?|"
+    r"road|rd\.?|boulevard|blvd\.?|drive|dr\.?|lane|ln\.?|way|court|ct\.?|"
+    r"place|pl\.?|circle|cir\.?|parkway|pkwy\.?|terrace|ter\.?|highway|hwy\.?)"
+    r"(?=\s|,|\.|$)", re.I)
+RE_POSTAL = re.compile(
+    r"^[A-Za-z][A-Za-z .'-]*,?\s+(?:AL|AK|AZ|AR|CA|CO|CT|DE|DC|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|AS|GU|MP|PR|VI|AA|AE|AP)\s+[0-9]{5}(?:-[0-9]{4})?$", re.I)
+RE_METADATA = re.compile(
+    r"^(?:subtotal\b|grand\s+total\b|total(?:\s+(?:charges?|billed|amount|due|payments?|"
+    r"credits?|balance)\b|\s*[:$]|\s+[0-9]|$)|(?:balance|amount)\s+due\b|"
+    r"(?:statement|current|previous|remaining|new|patient)\s+balance\b|"
+    r"(?:patient\s+)?(?:account|member|policy|claim|invoice|reference|statement|visit|record)"
+    r"\s*(?:number\b|no\.?\b|id\b|#|:|[0-9])|"
+    r"(?:patient name|address|billing address|mailing address|date of birth|dob|mrn|phone|fax)"
+    r"\s*(?::|#|\b)|"
+    r"(?:statement date|invoice date|date printed|page\s+[0-9]+)\b|"
+    r"(?:p\.?\s*o\.?\s+box|suite|ste\.?|apt\.?|apartment|unit|floor)\s*[#:]*\s*[0-9]|"
+    r"(?:date(?: of service)?\s+)?(?:cpt\s+|code\s+)?(?:description|service description)\s+"
+    r"(?:(?:qty|quantity|units)\s+)?(?:charge[s]?|amount)\b)", re.I)
 
-    Done as a backward scan rather than a regex on purpose. Every regex spelling
-    of "optional digits, optional dot, optional digits, at the end" makes the
-    engine retry from each start position, which is quadratic on a long numeric
-    run -- an account number or a barcode off a PDF text layer -- and it runs in
-    the reader's browser. This is linear and cannot backtrack.
-    """
-    t = desc.rstrip()
-    j = len(t)
-    while j > 0 and (t[j - 1].isdigit() or t[j - 1] in ",."):
-        j -= 1
-    return t[:j]
+
+def _bill_header(m):
+    return "charge" in m and any(k in m and m[k] != m["charge"] for k in ("code", "desc"))
 
 
-RE_CODEISH = re.compile(r"^[A-Za-z]{0,4}\d{3,6}$")
+def _normalize_money(text):
+    return text.replace("\u2212", "-").replace("\u00a0", " ").replace("\u202f", " ").replace("US$", "$")
 
 
-def _from_columns(parts):
-    """Read a line already split into columns (PDF text layers, aligned text).
-
-    Returns (code, desc, units, charge, date) or None when the row does not
-    look like a charge line.
-    """
-    charge_i = None
-    for i in range(len(parts) - 1, -1, -1):
-        if RE_MONEY.fullmatch(parts[i].strip().replace("$", "").replace(",", "")) \
-                or re.fullmatch(r"\$?[\d,]+\.\d{2}", parts[i].strip()):
-            charge_i = i
-            break
-    if charge_i is None:
+def _aligned_line(parts, header, idx, raw):
+    width, cols = header
+    if len(parts) != width:
         return None
-    charge = _money(parts[charge_i])
-    if charge == 0:
-        return None            # a credit is a real line; only zero is noise
+    value = lambda k: parts[cols[k]].strip() if k in cols else ""
+    charge = _normalize_money(value("charge"))
+    code, desc, date = value("code").upper(), value("desc"), value("date")
+    # Several clinics label a pure code column "Procedure".
+    if not code and RE_CODE.fullmatch(desc):
+        code, desc = desc.upper(), ""
+    if date and not RE_DATE.fullmatch(date):
+        return None
+    if code and not RE_CODEISH.fullmatch(code):
+        return None
+    if desc and (_metadata(desc) or not re.search(r"[A-Za-z]{2}", desc)):
+        return None
+    if not (code or desc) or not RE_MONEY_FIELD.fullmatch(charge):
+        return None
+    return Line(idx=idx, code=code, desc=desc[:160], units=_num(value("units")),
+                charge=_money(charge), date=date, ndc=normalize_ndc(raw), raw=raw[:300])
 
-    date = ""
-    for s in parts:
-        m = RE_DATE.search(s)
-        if m:
-            date = m.group(1)
-            break
 
-    code = ""
-    for i, s in enumerate(parts):
-        if i == charge_i:
-            continue
-        t = s.strip()
-        if t == date or RE_DATE.search(t):
-            continue
-        if RE_CODEISH.match(t):
-            code = t.upper()
-            break
+def _metadata(s):
+    return bool(RE_METADATA.search(s) or RE_STREET.search(s) or RE_POSTAL.fullmatch(s)
+                or RE_DATE.fullmatch(s))
 
+
+def _text_line(s, idx):
+    s = _normalize_money(s)
+    # PDF/OCR layout is frequently a single run-on string. Accept only a
+    # trailing standalone amount and independent service-like text. A bare
+    # integer additionally needs a billing code at the start (after any date).
+    match = RE_CHARGE_END.search(s)
+    if not match:
+        return None
+    field = match.group(1)
+    charge = _money(field)
+    if not math.isfinite(charge) or charge == 0:
+        return None
+    left = s[:match.start(1)].rstrip()
+    # Without mapped columns, two adjacent monetary fields do not tell
+    # us which was the provider's charge (rather than allowed/owed/paid).
+    if re.search(r"(?:^|[ \t])(?:-?\$[ \t]?[0-9,]+(?:\.[0-9]{2})?|"
+                 r"-?[0-9,]+\.[0-9]{2}|\(\$?[0-9,]+(?:\.[0-9]{2})?\))$", left):
+        return None
+    cols = re.split(r"\s{2,}", left)
+    positional = len(cols) >= 2
+    dm = RE_DATE.match(left)
+    date = dm.group(1) if dm else ""
+    prefix = left[dm.end():].lstrip() if dm else left
+    first = prefix.split(maxsplit=1)
+    head = first[0] if first else ""
+    # Numeric identifiers wider/shorter than a CPT are not evidence in an
+    # undelimited line. Custom alphanumeric codes are supported in aligned rows.
+    code = head.upper() if (RE_CODE.fullmatch(head) or
+                            (positional and head[:1].isalpha() and RE_CODEISH.fullmatch(head))) else ""
+    if "." not in field and "$" not in field and not code:
+        return None
+    desc = first[1] if code and len(first) > 1 else ("" if code else prefix)
+    parts = desc.rsplit(maxsplit=1)
     units = 1.0
-    for i in range(charge_i - 1, -1, -1):
-        t = parts[i].strip()
-        if re.fullmatch(r"\d{1,4}(\.\d+)?", t) and t.upper() != code:
-            units = _num(t)
+    if len(parts) == 2 and (code or positional) and re.fullmatch(r"[0-9]{1,4}(?:\.[0-9]+)?", parts[1]):
+        units = _num(parts[1])
+        desc = parts[0]
+    desc = desc.strip(" .\t-|")
+    if not re.search(r"[A-Za-z]{2}", desc) or _metadata(desc):
+        return None
+    return Line(idx=idx, code=code, desc=desc[:160], units=units, charge=charge,
+                date=date, ndc=normalize_ndc(s), raw=s[:300])
+
+
+def _receipt_header(parts):
+    # Plain Total is not a charge alias outside this explicitly labeled layout.
+    cells = [v.lower().strip() for v in parts]
+    valid = ((len(cells) == 5 or (len(cells) == 6 and re.fullmatch(r"[a-z][a-z -]{1,38}", cells[1])))
+            and re.fullmatch(r"(?:item |service )?description", cells[0])
+            and re.fullmatch(r"qty|quantity|units", cells[-4])
+            and re.fullmatch(r"(?:unit )?price", cells[-3])
+            and re.fullmatch(r"discounts?", cells[-2])
+            and re.fullmatch(r"(?:line )?total", cells[-1]))
+    return (cells[-3], len(cells) == 6) if valid else None
+
+
+def _receipt_footer(s):
+    return bool(re.match(r"(?:subtotal|grand\s+total|(?:balance|amount)\s+due|"
+                         r"payment\s+(?:method|details?|information))\b", s, re.I)
+                or re.match(r"(?:paid|due|(?:sales\s+)?tax|total|paid\s+amount|amount\s+paid)"
+                            r"\s*[:=]?\s*(?:\$|[0-9]|$)", s, re.I))
+
+
+def _receipt_line(s, idx, layout):
+    price_label, has_reference = layout
+    left = _normalize_money(s)
+    amounts = []
+    while len(amounts) < 3:
+        m = RE_CHARGE_END.search(left)
+        if not m or not any(c in m.group(1) for c in ".$"):
             break
+        amounts.insert(0, _money(m.group(1)))
+        left = left[:m.start(1)].rstrip()
+        if len(amounts) == 1:
+            left = re.sub(r"\s[-–—]$", "", left).rstrip()
+    q = re.search(r"\s([0-9]{1,4}(?:\.[0-9]{1,3})?)$", left)
+    if not q or len(amounts) < 2 or not all(math.isfinite(n) for n in amounts):
+        return None
+    units, price, charge = float(q.group(1)), amounts[0], amounts[-1]
+    discount = abs(amounts[1]) if len(amounts) == 3 else 0
+    grouped = re.split(r"\s{2,}", left[:q.start()].rstrip())
+    desc = grouped[0]
+    reference = (grouped[1] if has_reference and len(grouped) == 2
+                 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,39}", grouped[1]) else "")
+    cents = lambda n: math.floor(n * 100 + 0.5)
+    # Plain Price may be per unit or already extended by quantity.
+    matches = lambda n: abs(cents(n) - cents(discount) - cents(charge)) <= 1
+    if (len(grouped) > 2 or not re.search(r"[A-Za-z]{2}", desc) or _metadata(desc)
+            or "$" in desc or not units or price < 0 or charge < 0
+            or not (matches(units * price) or (price_label == "price" and matches(price)))):
+        return None
+    # Do not treat a receipt's SKU or its pre-discount unit price as medical evidence.
+    return Line(idx=idx, code="", desc=desc[:160], units=units, charge=charge, raw=s[:300],
+                receipt_reference=reference)
 
-    desc = ""
-    for i, s in enumerate(parts):
-        t = s.strip()
-        if i == charge_i or t.upper() == code or t == date:
-            continue
-        if len(t) > len(desc) and re.search(r"[A-Za-z]{3}", t):
-            desc = t
-    return code, desc[:160], units, charge, date
 
-
-def parse_text(text):
-    """Loose per-line extraction for bills pasted out of a PDF."""
+def parse_text(text, stats=None):
+    """Extract plausible charges, retaining a count of ignored and unread rows."""
     lines = []
+    raw_count = ignored = uncertain = consumed = 0
+    header = None
+    receipt = closed_receipt = False
     for raw in text.split("\n"):
         s = raw.strip()
-        if not s or len(s) < 8:
+        if not s:
             continue
-        if re.search(r"\b(total|balance due|subtotal|amount due|page \d)\b", s, re.I):
+        raw_count += 1
+        parts = re.split(r"\s{2,}", s)
+        cols = _map_headers(parts) if len(parts) > 1 else {}
+        receipt_layout = _receipt_header(parts)
+        if receipt_layout:
+            receipt = receipt_layout
+            closed_receipt = False
+            header = None
+            ignored += 1
             continue
-        monies = list(RE_MONEY.finditer(s))
-        if not monies:
+        if _bill_header(cols):
+            receipt = closed_receipt = False
+            header = (len(parts), cols)
+            ignored += 1
             continue
-
-        # A line with real column gaps (PDF text layers, aligned statements)
-        # can be read positionally, which is far more reliable than pattern
-        # matching against one run-on string.
-        cols = re.split(r"\s{2,}", s)
-        if len(cols) >= 3:
-            got = _from_columns(cols)
-            if got:
-                code, desc, units, charge, date = got
-                lines.append(Line(idx=len(lines) + 1, code=code, desc=desc,
-                                  units=units, charge=charge, date=date,
-                                  ndc=normalize_ndc(s), raw=s[:300]))
-                continue
-        charge = _money_from(monies[-1])
-        if charge == 0:
-            continue           # a credit is a real line; only zero is noise
-        cm = RE_CODE.search(s)
-        code = cm.group(1).upper() if cm else ""
-        dm = RE_DATE.search(s)
-        # Units: a small standalone integer sitting between the code and the money.
-        units = 1.0
-        um = re.search(r"\b(\d{1,3})\b(?=[^\d]*[\d,]+\.\d{2}\s*$)", s)
-        if um:
-            units = _num(um.group(1))
-        desc = s
-        if cm:
-            desc = s[cm.end():]
-        # `[\d,]*\.?\d*\s*$` let two quantifiers both match bare digits, so a long
-        # numeric run (an account number, a barcode off a PDF text layer) made the
-        # engine explore every split: ~1.9s at 1,000 digits, unbounded at 20,000,
-        # and it runs in the reader's browser. The decimal part is now only
-        # reachable through a required dot, which removes the ambiguity.
-        desc = _strip_trailing_number(desc).strip(" .\t-|")
-        lines.append(Line(idx=len(lines) + 1, code=code, desc=desc[:160],
-                          units=units, charge=charge,
-                          date=dm.group(1) if dm else "",
-                          ndc=normalize_ndc(s), raw=s[:300]))
+        if receipt and _receipt_footer(s):
+            closed_receipt = True
+            ignored += 1
+            continue
+        if _metadata(s):
+            ignored += 1
+            continue
+        # A multi-money statement is only safe when its layout survives and
+        # the actual charge column can be identified; never use its last cell.
+        if receipt:
+            line = None if closed_receipt else _receipt_line(s, len(lines) + 1, receipt)
+        elif header:
+            line = _aligned_line(parts, header, len(lines) + 1, s)
+        else:
+            line = _text_line(s, len(lines) + 1)
+        if line is not None:
+            lines.append(line)
+            consumed += 1
+        elif RE_CHARGE_END.search(_normalize_money(s)) or RE_DATE.match(s):
+            uncertain += 1
+    if stats is not None:
+        stats.update(mode="text", raw=raw_count, ignored=ignored, uncertain=uncertain, consumed=consumed)
     return lines
 
 
-def parse(text):
-    """Try delimited first, fall back to loose text. Returns [Line]."""
+def parse_details(text):
+    """Return itemized lines and transparent counts, without collecting text."""
     text = _denul(text.replace("\r\n", "\n").replace("\r", "\n")).lstrip("\ufeff")
-    lines = parse_delimited(text)
-    if len(lines) >= 1:
-        return lines
-    return parse_text(text)
+    stats = {}
+    lines = parse_delimited(text, stats)
+    if not stats:
+        lines = parse_text(text, stats)
+    stats["parsed"] = len(lines)
+    stats["unread"] = max(0, stats["raw"] - stats.pop("consumed", len(lines)) - stats["ignored"])
+    stats["uncertain"] = min(stats["unread"], stats.get("uncertain", 0))
+    stats["status"] = ("read" if lines else "no-text" if not stats["raw"] else
+                       "uncertain-layout" if stats["uncertain"] else "no-itemized-lines")
+    return lines, stats
+
+
+def parse(text):
+    """The stable public API returns only itemized Line records."""
+    return parse_details(text)[0]

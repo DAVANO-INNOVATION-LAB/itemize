@@ -3,7 +3,7 @@
  * All rules, parsing, action ranking and letter text live in web/rules.js,
  * which is shared with the Node parity harness so this app and the Python CLI
  * cannot silently disagree. Nothing here transmits your bill anywhere: the only
- * network request is for this page's own data/*.json at load.
+ * network requests load public reference data and optional same-origin OCR assets.
  */
 'use strict';
 
@@ -18,7 +18,48 @@ const DRAFT_KEY = 'itemize.draft.v1';
 let ref = new I.Reference({});
 let lastLines = [], lastFindings = [], lastCtx = null, eobRows = null;
 let linesConfirmed = false;
-let hasRun = false;
+let source = 'manual', fileRequest = null, retryFile = null;
+let replacing = false, hasReview = false, verificationRequested = false;
+let chargeOverrides = new Map(), chargeDraft = null, activeCharge = null;
+
+function showStage(stage) {
+  const reviewing = stage === 'review';
+  if (reviewing) hasReview = true;
+  $('#workspace').setAttribute('aria-labelledby', reviewing ? 'result-title' : 'intake-title');
+  for (const id of ['dropzone', 'privacy-caption', 'manual']) document.getElementById(id).classList.toggle('hidden', reviewing);
+  $('#backreview').classList.toggle('hidden', reviewing || !hasReview);
+  $('#results').classList.toggle('hidden', !reviewing);
+}
+
+function returnToIntake() {
+  replacing = hasReview;
+  showStage('intake');
+  $('#manual').open = false;
+  const button = $('#takephoto').disabled ? $('#choosefile') : $('#takephoto');
+  button.focus({ preventScroll: true });
+  window.scrollTo(0, 0);
+}
+
+function focusResult() {
+  $('#result-title').focus({ preventScroll: true });
+  window.scrollTo(0, 0);
+}
+
+function resetReview() {
+  lastLines = []; lastFindings = []; lastCtx = null;
+  linesConfirmed = false;
+  hasReview = false; replacing = false; verificationRequested = false;
+  $('#verify-more').open = false;
+  chargeOverrides = new Map();
+  closeChargeEditor();
+  closeRecovery();
+  $('#results').classList.add('hidden');
+  $('#letterbox').classList.add('hidden');
+  $('#lettertext').value = '';
+  $('#copystatus').textContent = '';
+  for (const id of ['technical', 'charges', 'exporttools']) document.getElementById(id).open = false;
+  setDownloadEnabled(false);
+}
 
 /* ------------------------------------------------------------- context */
 function readContext() {
@@ -84,12 +125,16 @@ function buildStateOptions(states) {
 }
 
 /* --------------------------------------------------------- parse stats */
-function parseStats(text, lines) {
-  const raw = text.split('\n').filter((l) => l.trim()).length;
-  // One header row is expected for delimited input; everything else that did not
-  // become a charge line is genuinely unaccounted for.
-  const unread = Math.max(0, raw - lines.length - 1);
-  return { raw, parsed: lines.length, unread };
+function renderReadingNote(stats) {
+  const note = $('#reading-note');
+  const ignored = stats?.ignored || 0;
+  const uncertain = stats?.uncertain || 0;
+  const details = [];
+  if (ignored) details.push(`Left out ${ignored} non-charge ${ignored === 1 ? 'row' : 'rows'}.`);
+  if (uncertain) details.push(`Couldn’t verify ${uncertain} possible charge ${uncertain === 1 ? 'row' : 'rows'}. Check the original for any missing charges.`);
+  note.classList.toggle('has-unread', uncertain > 0);
+  note.classList.toggle('hidden', details.length === 0);
+  note.textContent = details.join(' ');
 }
 
 /* -------------------------------------------------------------- render */
@@ -106,16 +151,14 @@ function render(lines, findings, ctx, stats) {
     ['Total charges', fmt(total)],
     ['Findings', String(findings.length)],
   ];
-  if (stats && stats.unread > 0) {
-    stat.push(['Input rows not read', String(stats.unread), stats.unread > lines.length * 0.25]);
-  }
   if (recoverable > 0) stat.push(['Disputable line items', fmt(recoverable), true]);
   if (wholeBill.length) stat.push(['Whole-bill protections', String(wholeBill.length), true]);
 
   $('#summary').innerHTML = stat.map(([k, v, flag]) =>
     `<div class="stat${flag ? ' flag' : ''}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('');
 
-  renderParseCheck(lines, stats);
+  renderParseCheck(lines);
+  renderOutcome(lines, findings, ctx, stats);
   renderActions(findings, ctx, lines);
 
   const lineRefs = (idxs) => (idxs || []).map((n) =>
@@ -150,39 +193,248 @@ function render(lines, findings, ctx, stats) {
     : '<p class="hint">No letter suggested for this combination yet.</p>';
   $$('.letterbtn').forEach((b) => b.addEventListener('click', () => showLetter(b.dataset.letter)));
 
-  $('#results').classList.remove('hidden');
-  announce(lines, findings, recoverable);
+  $('#charges').classList.remove('hidden');
+  if (!replacing) showStage('review');
+  const tentative = !linesConfirmed && isTentative(lines);
+  $('#charges').classList.toggle('hidden', tentative);
+  for (const id of ['technical', 'exporttools']) document.getElementById(id).classList.toggle('hidden', tentative);
+  announce(lines, stats);
+  renderReadingNote(stats);
 }
 
 /* The single live region. A screen reader gets one sentence per run rather than
    the whole audit re-read every time a checkbox changes. */
-function announce(lines, findings, recoverable) {
-  const need = findings.filter((f) => f.severity === 'high').length;
-  const bits = [`${findings.length} finding${findings.length === 1 ? '' : 's'} from `
-    + `${lines.length} line${lines.length === 1 ? '' : 's'}`];
-  if (need) bits.push(`${need} marked high`);
-  if (recoverable > 0) bits.push(`${fmt(recoverable)} in disputable line items`);
+function announce(lines, stats) {
   const el = $('#resultstatus');
-  el.textContent = (hasRun ? 'Updated: ' : '') + bits.join(', ') + '.';
-  el.classList.remove('pulse');
-  void el.offsetWidth;                       // restart the animation
-  if (hasRun) el.classList.add('pulse');
-  hasRun = true;
+  el.textContent = `${lines.length} charge${lines.length === 1 ? '' : 's'} read`
+    + (source === 'photo' ? ' from your photo' : '')
+    + (stats?.uncertain ? ' · Partial review' : '.');
 }
 
-function renderParseCheck(lines, stats) {
-  const box = $('#parsecheck');
-  if (linesConfirmed) { box.classList.add('hidden'); return; }
-  box.classList.remove('hidden');
-  const extra = stats && stats.unread > 0
-    ? ` ${stats.unread} row${stats.unread === 1 ? '' : 's'} of what you pasted did not become
-       a charge line — that is often a header, an address or a footer, but check that it is
-       not a charge.`
-    : '';
-  $('#parsecheckbody').innerHTML = `We read <strong>${lines.length}</strong> charge
-    line${lines.length === 1 ? '' : 's'}.${extra} Layouts vary and columns get reordered, so
-    compare the <a href="#linestable">lines reviewed</a> below against your paper bill before
-    you act on anything here or send the evidence packet.`;
+function readableDescription(line) {
+  return line.desc || ref.describe(line.code) || (line.code ? 'Code ' + line.code : 'Unlabeled charge');
+}
+
+function isTentative(lines) {
+  return chargeOverrides.size > 0 || ['photo', 'corrected'].includes(source) || lines.some((line) => line.suspect_columns);
+}
+
+const VERIFY_INLINE_ROWS = 8;
+function syncVerifyButton() {
+  const more = $('#verify-more');
+  const allShown = more.classList.contains('hidden') || more.open;
+  const count = lastLines.length;
+  const button = $('#confirmlines');
+  button.disabled = !allShown;
+  button.textContent = !allShown ? `Show all ${count} charges first`
+    : count === 1 ? 'This amount matches' : `All ${count} amounts match`;
+}
+
+function renderParseCheck(lines) {
+  const needsCheck = !linesConfirmed && (verificationRequested || isTentative(lines));
+  $('#parsecheck').classList.toggle('hidden', !needsCheck);
+  const first = $('#verify-first'), rest = $('#verify-rest'), more = $('#verify-more');
+  $('#verify-photos').classList.toggle('hidden', Boolean(chargeDraft));
+  $('#verify-actions').classList.toggle('hidden', Boolean(chargeDraft));
+  if (!needsCheck) {
+    first.replaceChildren();
+    rest.replaceChildren();
+    more.open = false;
+    return;
+  }
+  $('#parsecheckbody').textContent = chargeDraft
+    ? 'Corrections don’t affect the review until you confirm them.'
+    : chargeOverrides.size ? 'Check the corrected amounts against your receipt before continuing.'
+    : source === 'photo' ? 'Photo reading can miss a line or get a number wrong. Compare these charges with the original to finish.'
+    : 'Compare these charges with the original before using or sharing the review.';
+  const rows = lines.map((line) =>
+    `<li><span>${esc(readableDescription(line))}</span><strong>${esc(fmt(line.charge))}</strong></li>`);
+  first.innerHTML = rows.slice(0, VERIFY_INLINE_ROWS).join('');
+  rest.innerHTML = rows.slice(VERIFY_INLINE_ROWS).join('');
+  rest.start = VERIFY_INLINE_ROWS + 1;
+  const remaining = lines.length - VERIFY_INLINE_ROWS;
+  more.classList.toggle('hidden', remaining <= 0);
+  if (remaining > 0) {
+    $('#verify-more-label').textContent = `Show ${remaining} more charge${remaining === 1 ? '' : 's'}`;
+  } else {
+    more.open = false;
+  }
+  syncVerifyButton();
+}
+
+function applyChargeEdits(lines, edits) {
+  return lines.map((line) => edits.has(line.idx) ? { ...line, ...edits.get(line.idx) } : line);
+}
+
+function closeChargeEditor() {
+  chargeDraft = null;
+  activeCharge = null;
+  $('#charge-editor').classList.add('hidden');
+  $('#editable-charges').replaceChildren();
+  $('#charge-editor-status').textContent = '';
+}
+
+function openChargeEditor() {
+  if (!lastLines.length || linesConfirmed || chargeDraft) return;
+  chargeDraft = new Map(chargeOverrides);
+  activeCharge = null;
+  renderParseCheck(lastLines);
+  $('#charge-editor').classList.remove('hidden');
+  renderChargeEditor();
+  $('#charge-editor-heading').focus();
+}
+
+function renderChargeEditor() {
+  if (!chargeDraft) return;
+  $('#finish-charge-edit').disabled = activeCharge !== null;
+  $('#editable-charges').innerHTML = applyChargeEdits(lastLines, chargeDraft).map((line) => {
+    const name = readableDescription(line);
+    if (activeCharge !== line.idx) {
+      return `<li class="editable-charge"><span>${esc(name)}${chargeDraft.has(line.idx) ? ' <small>Edited</small>' : ''}</span>`
+        + `<strong>${esc(fmt(line.charge))}</strong><button type="button" class="secondary" data-edit-charge="${line.idx}"`
+        + ` aria-label="Edit charge ${line.idx}: ${esc(name)}"${activeCharge !== null ? ' disabled' : ''}>Edit</button></li>`;
+    }
+    return `<li class="editable-charge editing"><div class="charge-edit-fields">`
+      + `<label for="charge-edit-description">Description</label><input id="charge-edit-description" type="text" maxlength="160" value="${esc(line.desc || '')}" autocomplete="off">`
+      + `<label for="charge-edit-amount">Amount in dollars</label><input id="charge-edit-amount" type="text" inputmode="decimal" value="${line.charge.toFixed(2)}" autocomplete="off">`
+      + '<p id="charge-edit-error" class="hint" role="alert"></p><div class="controls">'
+      + '<button type="button" data-save-charge>Save this charge</button>'
+      + '<button type="button" class="secondary" data-cancel-charge>Cancel this change</button></div></div></li>';
+  }).join('');
+}
+
+function beginChargeEdit(index) {
+  if (!chargeDraft || activeCharge !== null || !lastLines.some((line) => line.idx === index)) return;
+  activeCharge = index;
+  $('#charge-editor-status').textContent = '';
+  renderChargeEditor();
+  $('#charge-edit-description').focus();
+}
+
+function focusEditButton(index) {
+  $(`button[data-edit-charge="${index}"]`)?.focus();
+}
+
+function saveChargeEdit() {
+  if (!chargeDraft || activeCharge === null) return;
+  const desc = $('#charge-edit-description').value.trim();
+  const raw = $('#charge-edit-amount').value.trim();
+  if (!desc || desc.length > 160) {
+    $('#charge-edit-error').textContent = 'Enter a description of 1 to 160 characters.';
+    $('#charge-edit-description').focus();
+    return;
+  }
+  if (!/^-?\$?(?:[0-9]{1,9}|[0-9]{1,3}(?:,[0-9]{3}){1,2})(?:\.[0-9]{1,2})?$/.test(raw)) {
+    $('#charge-edit-error').textContent = 'Enter a dollar amount like 25.00. Use a minus sign for a credit.';
+    $('#charge-edit-amount').focus();
+    return;
+  }
+  const charge = Number(raw.replace(/[,$]/g, ''));
+  const index = activeCharge;
+  chargeDraft.set(index, { desc, charge });
+  activeCharge = null;
+  renderChargeEditor();
+  focusEditButton(index);
+  $('#charge-editor-status').textContent = 'Charge saved. Confirm your corrections when you’re done.';
+}
+
+function cancelChargeEdit() {
+  if (activeCharge === null) return;
+  const index = activeCharge;
+  activeCharge = null;
+  renderChargeEditor();
+  focusEditButton(index);
+  $('#charge-editor-status').textContent = 'This charge was not changed.';
+}
+
+function finishChargeEditor(apply) {
+  if (!chargeDraft || (apply && activeCharge !== null)) return;
+  if (apply) {
+    chargeOverrides = chargeDraft;
+    linesConfirmed = false;
+    verificationRequested = true;
+  }
+  closeChargeEditor();
+  if (apply) runAudit();
+  else renderParseCheck(lastLines);
+  $('#verify-photos').focus();
+}
+
+function renderOutcome(lines, findings, ctx, stats) {
+  const card = $('#outcome');
+  if (!linesConfirmed && isTentative(lines)) {
+    card.classList.add('hidden');
+    card.replaceChildren();
+    $('#result-title').textContent = chargeOverrides.size
+      ? 'Check the corrected charges'
+      : source === 'photo' ? 'Almost done. Check the photo.' : 'Almost done. Check the charges.';
+    return;
+  }
+  card.classList.remove('hidden');
+  $('#result-title').textContent = 'Your receipt review';
+  const action = I.nextActions(findings, ctx, 1, lines)[0];
+  const duplicate = findings.find((f) => {
+    if (f.rule !== 'exact_duplicate') return false;
+    const charges = lines.filter((line) => f.lines.includes(line.idx));
+    // Amount alone cannot establish even an apparent duplicate: require a
+    // matching billing code or a matching, nonempty receipt description.
+    return charges.every((line) => line.code)
+      || new Set(charges.map((line) => line.desc.trim().replace(/\s+/g, ' ').toLowerCase())).size === 1
+        && Boolean(charges[0]?.desc.trim());
+  });
+  const important = findings.find((f) => ['high', 'warn', 'notice'].includes(f.severity)
+    && !['ref_stale', 'stale_data', 'suspect_columns'].includes(f.rule));
+  const firstIssue = duplicate || important;
+  const leadDuplicate = duplicate && (!action || ['dispute', 'itemized'].includes(action.key));
+  const affected = firstIssue && lines.find((line) => firstIssue.lines.includes(line.idx));
+  const structuralOnly = !lines.some((line) => line.code);
+  let label = 'Review complete', headline = 'No issues found by these checks';
+  let msg = 'This doesn’t prove the bill is correct or tell you what you owe.';
+  if (leadDuplicate) {
+    label = 'One thing to check';
+    headline = duplicate.lines.length === 2 ? 'A charge appears twice' : 'A charge appears more than once';
+    msg = 'Ask the billing office whether these entries are for separate services. If it was one service, ask them to correct the repeated charge.';
+  } else if (stats?.uncertain && (action?.key === 'itemized' || (!action && !important))) {
+    label = 'Partial review';
+    headline = 'Some charges need a closer look';
+    msg = 'Compare the charges we read with the original before relying on this review.';
+  } else if (action) {
+    label = action.key === 'itemized' ? 'Charges read' : 'One next step';
+    headline = {
+      itemized: 'We read the charges', eob: 'Check why the amounts differ',
+      dispute: 'Ask about these charges', gfe: 'Check your original estimate',
+      nsa: 'Ask about surprise billing', charity: 'Ask about financial assistance',
+      cash: 'Ask for the cash price',
+    }[action.key] || 'Ask about this bill';
+    msg = plainAction(action);
+  } else if (important) {
+    label = 'One thing to check';
+    headline = 'Ask about a charge that stood out';
+    msg = 'Ask the billing office to explain this charge. A flag is a reason to ask, not proof of an error.';
+  }
+  const concrete = !!affected && (leadDuplicate || !action);
+  card.classList.toggle('has-issue', Boolean(firstIssue || action));
+  card.innerHTML = `<p class="outcome-label">${esc(label)}</p><h3>${esc(headline)}</h3>`
+    + (concrete
+      ? `<div class="flagged-charge"><span>${esc(readableDescription(affected))}</span><strong>${esc(fmt(affected.charge))}${leadDuplicate ? ' per entry' : ''}</strong></div>`
+      : '')
+    + `<p>${esc(msg)}</p>`
+    + (structuralOnly && action?.key !== 'itemized' ? '<p class="hint">This document doesn’t show billing codes, so those checks couldn’t run.</p>' : '')
+    + (action && action.key !== 'itemized' && action.letter && linesConfirmed && (!leadDuplicate || action.key === 'dispute')
+      ? '<button type="button" class="secondary" id="draftnext">Prepare a draft letter</button>' : '');
+  $('#draftnext')?.addEventListener('click', () => showLetter(action.letter));
+}
+
+function plainAction(action) {
+  return ({
+    dispute: 'Ask the billing office to explain the flagged charges. Check the details below before asking them to correct anything.',
+    itemized: 'Some billing checks need service codes. If you want a deeper review, ask your provider for those codes.',
+    eob: 'Ask your billing office why its charge differs from the amount your insurer says you owe.',
+    gfe: 'Ask your billing office why this charge is higher than the estimate it gave you.',
+    nsa: 'Ask your insurer or billing office whether surprise-billing protections apply.',
+    charity: 'Ask the hospital whether it has a program that can lower the bill.',
+    cash: 'Ask the billing office to compare these charges with its published cash price.',
+  })[action.key] || action.title;
 }
 
 function renderActions(findings, ctx, lines) {
@@ -206,8 +458,6 @@ function renderActions(findings, ctx, lines) {
           ${a.letter ? `<button class="secondary letterbtn" data-letter="${a.letter}">Draft: ${esc(I.LETTERS[a.letter].label)}</button>` : ''}
         </li>`).join('')}</ol>
     </div>`;
-  $$('#actions .letterbtn').forEach((b) =>
-    b.addEventListener('click', () => showLetter(b.dataset.letter)));
 }
 
 /* ------------------------------------------------------------ evidence */
@@ -282,6 +532,8 @@ function letterText(kind) {
 }
 
 function showLetter(kind) {
+  if (!linesConfirmed) return;
+  $('#exporttools').open = true;
   openLetter = kind;
   $('#lettertext').value = letterText(kind);
   $('#letterbox').classList.remove('hidden');
@@ -320,48 +572,109 @@ function status(msg, kind) {
   el.className = 'filestatus' + (kind ? ' ' + kind : '');
 }
 
-async function readFileText(f) {
-  const isPdf = /\.pdf$/i.test(f.name || '') || f.type === 'application/pdf';
-  if (/^image\//.test(f.type)) {
-    throw new Error(`“${f.name}” is a photo. This tool reads text, not images — it cannot `
-      + 'read a picture of a bill. Ask your provider’s portal for a PDF or CSV, or type '
-      + 'the lines in manually (date, code, description, units, charge).');
-  }
-  if (isPdf) {
-    const text = await PDF.extractText(await f.arrayBuffer());
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const isPdf = (f) => /\.pdf$/i.test(f.name || '') || f.type === 'application/pdf';
+const isPhoto = (f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|bmp|gif|heic|heif)$/i.test(f.name);
+
+async function readFileText(f, signal, forEob = false) {
+  if (f.size > MAX_FILE_BYTES) throw new Error('Choose a file under 25 MB.');
+  if (isPdf(f)) {
+    let text;
+    try { text = await PDF.extractText(await f.arrayBuffer(), signal); }
+    catch (error) {
+      if (error?.code === 'PDF_ABORT') throw error;
+      if (error?.code === 'PDF_ASSETS_REQUIRED') {
+        throw new Error('This copy of Itemize couldn’t decode the PDF text. '
+          + (forEob ? 'Try another copy from your insurer.'
+            : 'Try another copy of the bill or take a clear photo of the page.'));
+      }
+      if (error?.code === 'PDF_PASSWORD') {
+        throw new Error('This PDF is password protected. Open it first or choose an unprotected copy.');
+      }
+      if (error?.code === 'PDF_LIMIT') {
+        throw new Error('This PDF is too large or complex to read here. Try a copy with fewer pages.');
+      }
+      throw new Error(forEob
+        ? 'We couldn’t open this PDF. Try another copy or spreadsheet from your insurer.'
+        : 'We couldn’t open this PDF. Try another copy or paste the bill text.');
+    }
     if (!text.trim()) {
-      throw new Error(`“${f.name}” has no text layer — it is most likely a scan or photo `
-        + 'saved as a PDF. Nothing was extracted. Ask the billing office for a '
-        + 'machine-readable itemized statement, or type the lines in manually.');
+      throw new Error('This PDF has no readable text. '
+        + (forEob ? 'Try a text PDF or spreadsheet from your insurer.'
+          : 'Try a clear photo of the page or a text PDF from your provider.'));
     }
     return text;
+  }
+  if (isPhoto(f) || !/\.(csv|tsv|txt)$/i.test(f.name || '')) {
+    throw new Error('Choose a photo, a PDF, or a CSV, TSV or text file.');
   }
   return f.text();
 }
 
+function requestState(busy, retry) {
+  $('#receipt-controls').setAttribute('aria-busy', String(busy));
+  $('#dropzone').classList.toggle('is-reading', busy);
+  $('#read-indicator').classList.toggle('hidden', !busy);
+  $('#cancelread').classList.toggle('hidden', !busy);
+  $('#retryread').classList.toggle('hidden', !retry);
+}
+
+function cancelFile(announce = true) {
+  if (!fileRequest) return;
+  fileRequest.abort();
+  fileRequest = null;
+  requestState(false, Boolean(retryFile));
+  if (announce) status('Reading canceled. Your previous review was not changed.');
+}
+
 async function handleFile(f) {
   if (!f) return;
+  cancelFile(false);
+  const request = new AbortController();
+  fileRequest = request;
+  retryFile = f;
+  const photo = isPhoto(f);
+  requestState(true, false);
+  status(photo ? 'Reading the photo on this device…' : 'Reading your file on this device…');
   try {
-    status(`Reading “${f.name}” on this device…`);
-    const text = await readFileText(f);
-    if (!confirmOverwrite(`Replace what is in the box with “${f.name}”?`)) {
-      status('Kept what you had. Nothing was replaced.');
+    if (f.size > MAX_FILE_BYTES) throw new Error('Choose a file under 25 MB.');
+    const text = photo ? await Receipt.readPhoto(f, request.signal) : await readFileText(f, request.signal);
+    if (fileRequest !== request) return;
+    if (!replacing && !confirmOverwrite('Replace the current receipt with this one?')) {
+      retryFile = null;
+      status('Kept your current receipt.');
       return;
     }
+    await referencesReady;
+    if (fileRequest !== request) return;
+    resetReview();
+    eobSequence += 1;
+    eobRows = null;
+    $('#eobstatus').textContent = '';
     $('#bill').value = text;
-    const n = text.split('\n').filter((l) => l.trim()).length;
-    status(`Read ${n} lines from “${f.name}”. Check them against your paper bill before `
-      + 'reviewing — layouts vary, and columns can be reordered.', 'ok');
+    source = photo ? 'photo' : isPdf(f) ? 'pdf' : 'file';
     runAudit();
+    focusResult();
+    status('');
+    retryFile = null;
   } catch (err) {
-    status(err.message, 'warn');
+    if (fileRequest === request) status(err.message, 'warn');
+  } finally {
+    if (fileRequest === request) {
+      fileRequest = null;
+      requestState(false, Boolean(retryFile));
+    }
   }
 }
 
+let eobSequence = 0;
 async function handleEob(f) {
   if (!f) return;
+  const sequence = ++eobSequence;
   try {
-    const text = await readFileText(f);
+    if (isPhoto(f)) throw new Error('Choose a text PDF or CSV for your insurer’s statement.');
+    const text = await readFileText(f, undefined, true);
+    if (sequence !== eobSequence) return;
     eobRows = I.parseEob(text);
     if (!eobRows.length) {
       $('#eobstatus').textContent = `Could not read any rows from “${f.name}”. `
@@ -375,6 +688,7 @@ async function handleEob(f) {
     $('#eobstatus').className = 'filestatus ok';
     if (lastLines.length) runAudit();
   } catch (err) {
+    if (sequence !== eobSequence) return;
     $('#eobstatus').textContent = err.message;
     $('#eobstatus').className = 'filestatus warn';
   }
@@ -384,35 +698,60 @@ function confirmOverwrite(question) {
   return !$('#bill').value.trim() || window.confirm(question);
 }
 
+function closeRecovery() {
+  const section = $('#read-recovery');
+  section.open = false;
+  section.classList.add('hidden');
+  $('#recovery-text').value = '';
+  $('#recovery-status').textContent = '';
+}
+
+function renderRecovery(stats) {
+  lastFindings = [];
+  $('#result-title').textContent = 'We couldn’t identify individual charges';
+  $('#resultstatus').textContent = 'Text found · No charges reviewed';
+  const advice = source === 'photo'
+    ? 'Try a sharp photo of the full page, with every service and amount in view.'
+    : source === 'pdf'
+      ? 'If available, download an itemized PDF from your provider that lists each service and its charge.'
+      : 'Try an itemized bill that lists each service and its charge.';
+  $('#outcome').classList.remove('has-issue', 'hidden');
+  const uncertainty = stats?.status === 'uncertain-layout'
+    ? '<p>Some rows looked like charges, but we couldn’t reliably match them to amounts.</p>' : '';
+  $('#outcome').innerHTML = '<p class="outcome-label">Next step</p><h3>Try a clearer list of charges</h3>'
+    + uncertainty + `<p>${esc(advice)}</p>`;
+  for (const id of ['parsecheck', 'technical', 'charges', 'exporttools', 'reading-note']) {
+    document.getElementById(id).classList.add('hidden');
+  }
+  $('#read-recovery').classList.remove('hidden');
+  if (!replacing) showStage('review');
+  setDownloadEnabled(false);
+}
+
 /* ----------------------------------------------------------- the audit */
 function runAudit() {
   const text = $('#bill').value.trim();
   if (!text) { $('#bill').focus(); return; }
-  lastLines = I.parseBill(text);
+  const { lines, stats } = I.parseBillDetails(text);
+  lastLines = applyChargeEdits(lines, chargeOverrides);
   lastCtx = readContext();
   if (!lastLines.length) {
-    $('#findings').innerHTML = `<div class="finding warn"><span class="badge">Review</span>
-      <h4>Could not read any charge lines</h4>
-      <p>Expected a table with code, quantity and charge columns, or bill text copied
-      from a PDF. Try the example button to see a working format.</p></div>`;
-    $('#summary').innerHTML = '';
-    $('#actions').innerHTML = '';
-    $('#linetable tbody').innerHTML = '';
-    $('#letters').innerHTML = '';
-    $('#parsecheck').classList.add('hidden');
-    $('#resultstatus').textContent = 'No charge lines could be read from what you pasted.';
-    $('#results').classList.remove('hidden');
-    setDownloadEnabled(false);
+    renderRecovery(stats);
     return;
   }
-  lastFindings = I.audit(lastLines, ref, lastCtx, eobRows);
-  render(lastLines, lastFindings, lastCtx, parseStats(text, lastLines));
+  closeRecovery();
+  lastFindings = !linesConfirmed && isTentative(lastLines) ? [] : I.audit(lastLines, ref, lastCtx, eobRows);
+  render(lastLines, lastFindings, lastCtx, stats);
   setDownloadEnabled(linesConfirmed);
   persist();
 }
 
 function setDownloadEnabled(on) {
   $('#download').disabled = !on;
+  $('#print').disabled = !on;
+  $('#results').classList.toggle('verified', on);
+  $$('.letterbtn').forEach((button) => { button.disabled = !on; });
+  $('#exportverify').classList.toggle('hidden', on);
   $('#downloadhint').textContent = on
     ? 'You confirmed the lines match your bill.'
     : 'Confirm the lines above match your bill to enable the packet.';
@@ -426,7 +765,7 @@ function persist() {
   if (!$('#keep').checked) return;
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
-      bill: $('#bill').value,
+      bill: $('#bill').value, source,
       ctx: {
         insured: (document.querySelector('input[name="insured"]:checked') || {}).value || '',
         deductible: (document.querySelector('input[name="deductible"]:checked') || {}).value || '',
@@ -460,6 +799,7 @@ function restore() {
   try { d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (err) { d = null; }
   if (!d) return false;
   $('#keep').checked = true;
+  source = ['photo', 'pdf', 'corrected'].includes(d.source) ? d.source : 'manual';
   $('#bill').value = d.bill || '';
   const c = d.ctx || {};
   const setRadio = (name, val) => {
@@ -484,48 +824,130 @@ function restore() {
 
 /* -------------------------------------------------------------- events */
 $('#run').addEventListener('click', () => {
+  cancelFile(false);
+  resetReview();
   // A new run is a new bill; the reader has to look at the lines again.
   linesConfirmed = false;
   runAudit();
-  $('#results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!$('#results').classList.contains('hidden')) focusResult();
 });
 
-$('#file').addEventListener('change', (e) => { handleFile(e.target.files[0]); e.target.value = ''; });
+for (const [button, input] of [['takephoto', 'camera'], ['choosefile', 'file'], ['chooseeob', 'eobfile']]) {
+  document.getElementById(button).addEventListener('click', () => document.getElementById(input).click());
+}
+for (const id of ['file', 'camera']) {
+  document.getElementById(id).addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    handleFile(file);
+  });
+}
+// Keep the shorter PDF route useful when a static host did not stage photo OCR.
+fetch('vendor/ocr/tesseract.min.js', { method: 'HEAD' })
+  .then((r) => {
+    if (!r.ok || /text\/html/i.test(r.headers.get('content-type') || '')) {
+      $('#intake-note').textContent = 'Photo reading isn’t installed here. Drop a text PDF or choose a file.';
+      $('#takephoto').disabled = true;
+    }
+  }).catch(() => { /* Offline: the browser may already have the OCR assets. */ });
+$('#cancelread').addEventListener('click', () => {
+  cancelFile();
+  $('#choosefile').focus();
+});
+$('#retryread').addEventListener('click', () => handleFile(retryFile));
+$('#read-recovery').addEventListener('toggle', () => {
+  if ($('#read-recovery').open && !$('#recovery-text').value) {
+    $('#recovery-text').value = $('#bill').value;
+  }
+});
+$('#review-corrected').addEventListener('click', () => {
+  const text = $('#recovery-text').value.trim();
+  if (!text) {
+    $('#recovery-status').textContent = 'Enter the text from your bill first.';
+    $('#recovery-text').focus();
+    return;
+  }
+  $('#bill').value = text;
+  source = 'corrected';
+  linesConfirmed = false;
+  runAudit();
+  if (lastLines.length) focusResult();
+  else $('#recovery-status').textContent = 'Still no individual charges identified. Check that each service has an amount.';
+});
+$('#reviewagain').addEventListener('click', returnToIntake);
+$('#backreview').addEventListener('click', () => {
+  cancelFile(false); retryFile = null; requestState(false, false); status('');
+  replacing = false;
+  showStage('review');
+  focusResult();
+});
+$('#bill').addEventListener('input', () => {
+  cancelFile();
+  resetReview();
+  showStage('intake');
+});
 $('#eobfile').addEventListener('change', (e) => { handleEob(e.target.files[0]); e.target.value = ''; });
 
 $('#download').addEventListener('click', () => {
   if ($('#download').disabled) return;
   save(toMarkdown(lastLines, lastFindings, lastCtx), 'itemize-review.md');
 });
-$('#print').addEventListener('click', () => window.print());
+$('#print').addEventListener('click', () => {
+  if (!linesConfirmed) return;
+  const technical = $('#technical'), charges = $('#charges');
+  const wasOpen = [technical.open, charges.open];
+  technical.open = charges.open = true;
+  window.print();
+  [technical.open, charges.open] = wasOpen;
+});
 
+$('#exportverify').addEventListener('click', () => {
+  verificationRequested = true;
+  renderParseCheck(lastLines);
+  $('#verify-photos').focus();
+});
+$('#verify-more').addEventListener('toggle', syncVerifyButton);
 $('#confirmlines').addEventListener('click', () => {
+  if (chargeDraft || $('#confirmlines').disabled || !lastLines.length || $('#parsecheck').classList.contains('hidden')) return;
   linesConfirmed = true;
-  $('#parsecheck').classList.add('hidden');
-  setDownloadEnabled(true);
+  verificationRequested = false;
+  runAudit();
+  focusResult();
 });
-$('#rejectlines').addEventListener('click', () => {
-  linesConfirmed = false;
-  setDownloadEnabled(false);
-  $('#parsecheckbody').innerHTML = 'Then do not send anything based on this reading. '
-    + 'Correct the text in the box above by hand — the lines are read from what is there, '
-    + 'so fixing a row and reviewing again is enough. If the layout is defeating the '
-    + 'parser, ask the billing office for a CSV export or type the lines in as '
-    + '<code>date, code, description, units, charge</code>.';
+$('#rejectlines').addEventListener('click', openChargeEditor);
+$('#editable-charges').addEventListener('click', (event) => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  if (button.hasAttribute('data-edit-charge')) beginChargeEdit(Number(button.dataset.editCharge));
+  else if (button.hasAttribute('data-save-charge')) saveChargeEdit();
+  else if (button.hasAttribute('data-cancel-charge')) cancelChargeEdit();
 });
+$('#finish-charge-edit').addEventListener('click', () => finishChargeEditor(true));
+$('#discard-charge-edit').addEventListener('click', () => finishChargeEditor(false));
 
 $('#clear').addEventListener('click', () => {
+  cancelFile(false);
+  retryFile = null;
+  requestState(false, false);
   $('#bill').value = '';
-  $('#results').classList.add('hidden');
-  $('#letterbox').classList.add('hidden');
-  lastLines = []; lastFindings = []; eobRows = null;
-  linesConfirmed = false; hasRun = false;
+  resetReview();
+  source = 'manual'; eobSequence += 1; eobRows = null;
   status(''); $('#eobstatus').textContent = '';
+  showStage('intake');
   if ($('#keep').checked) persist();
 });
 
 $('#demo').addEventListener('click', () => {
   if (!confirmOverwrite('Replace what is in the box with the example bill?')) return;
+  cancelFile(false);
+  retryFile = null;
+  requestState(false, false);
+  resetReview();
+  source = 'manual';
+  eobSequence += 1;
+  eobRows = null;
+  status('');
+  $('#eobstatus').textContent = '';
   $('#bill').value = `Date of Service,Code,NDC,Description,Qty,Charges
 2026-03-14,99283,,EMERGENCY DEPT VISIT LEVEL 3,1,"1,842.00"
 2026-03-14,J1885,00409-3799-01,KETOROLAC TROMETHAMINE INJ 15MG,2,180.00
@@ -538,7 +960,7 @@ $('#demo').addEventListener('click', () => {
 2026-03-14,E0114,,CRUTCHES UNDERARM PAIR,1,124.00`;
   linesConfirmed = false;
   runAudit();
-  $('#results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!$('#results').classList.contains('hidden')) focusResult();
 });
 
 $('#keep').addEventListener('change', () => {
@@ -577,39 +999,26 @@ function flashTarget() {
   const row = document.getElementById(`line-${m[1]}`);
   if (!row) return;
   $$('#linetable tr.flash').forEach((r) => r.classList.remove('flash'));
+  $('#charges').open = true;
   row.classList.add('flash');
   row.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 /* --------------------------------------------------------------- boot */
-Promise.all(['hcpcs', 'asp', 'dmepos', 'nadac', 'drg', 'states', 'manifest'].map((n) =>
+const referencesReady = Promise.all(['hcpcs', 'asp', 'dmepos', 'nadac', 'drg', 'states', 'manifest'].map((n) =>
   fetch(`data/${n}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
 )).then(([hcpcs, asp, dmepos, nadac, drg, states, manifest]) => {
   ref = new I.Reference({ hcpcs, asp, dmepos, nadac, drg, states, manifest });
   buildStateOptions(states);
-  const savedState = restore();
+  const savedState = fileRequest ? '' : restore();
   if (savedState) $('#state').value = savedState;
 
-  const allStates = (states && states.states) || {};
-  const sc = Object.keys(allStates).length;
-  const scStd = Object.values(allStates).filter(
-    (e) => (e.charity_care || {}).state_minimum_standards).length;
-  const n = Object.keys(ref.hcpcs).length;
-  const priced = new Set([...Object.keys(ref.asp), ...Object.keys(ref.dmepos)]).size;
-  const nd = Object.keys(ref.nadac).length;
-  const dr = Object.keys(ref.drg).length;
-  $('#provenance').textContent = n
-    ? `Reference data: ${n.toLocaleString()} HCPCS Level II codes, ${priced.toLocaleString()} `
-      + `Medicare price benchmarks (Part B drugs and DMEPOS)`
-      + (nd ? `, ${nd.toLocaleString()} drug acquisition costs by NDC` : '')
-      + (dr ? `, and ${dr.toLocaleString()} national MS-DRG averages` : '')
-      + `, built ${ref.manifest.built || 'unknown'}. `
-      + `Ground-ambulance and hospital financial-assistance law verified for ${sc} `
-      + `jurisdictions; ${scStd} of them set their own assistance standards, and the rest `
-      + `are recorded as researched-and-none rather than left blank.`
-    : 'Reference data not found — run tools/build_data.py. Structural checks still work.';
+  const name = ref.manifest.built ? ` (built ${ref.manifest.built})` : '';
+  $('#provenance').textContent = Object.keys(ref.hcpcs).length
+    ? `Federal reference data is available${name}. Each finding lists its source and limits.`
+    : 'Federal reference data didn’t load. Checks like repeated charges still work.';
 
-  if ($('#bill').value.trim()) runAudit();
+  if (!fileRequest && $('#bill').value.trim()) runAudit();
 });
 
 if ('serviceWorker' in navigator) {

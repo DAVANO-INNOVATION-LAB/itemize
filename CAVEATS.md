@@ -205,15 +205,17 @@ the date in `web/data/manifest.json` and may change.
 * **PDF support reads text-layer PDFs only.** Scanned documents and photographs
   saved as PDFs have no text layer; the tool says so plainly rather than
   returning an empty result that reads like "nothing wrong".
-* **Photographs of bills are not supported, on purpose.** OCR of a dense table
-  from a phone camera gets digits wrong, and `$1,842.00` read as `$1,042.00`
-  produces a confident, sourced, wrong dispute. That failure is silent and looks
-  exactly like success. See *Why not photos?* in the README.
-* Encrypted PDFs and CID/Type0 fonts with custom encodings are not handled.
+* **Browser photo reading is optional and preliminary.** The host must stage
+  the local OCR assets. A camera can miss lines or get digits wrong; Itemize
+  does not audit a photo or offer an export until you check the amounts against
+  the original. See *Photo reading and verification* in the README.
+* Locked PDFs may need an unprotected copy. The basic decoder and CLI cannot
+  read some CID/Type0 fonts. The optional staged browser PDF.js reader supports
+  more embedded-font text layouts without uploading the document.
 * Column detection on loose text is heuristic. **Check the "Lines reviewed"
   table against your paper bill** before acting on anything.
-* Lines that cannot be read are surfaced, never silently dropped — but a
-  mis-parsed line is still possible.
+* The parser flags rows it recognizes as possible charges but cannot verify.
+  It can still miss or misread rows, so compare with the original.
 
 ---
 

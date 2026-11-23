@@ -1,4 +1,4 @@
-/* Minimal PDF text-layer extractor — no dependencies.
+/* PDF text-layer reader: on-device PDF.js when prepared, basic fallback.
  *
  * Most bills a hospital portal hands you are PDFs with a real text layer, so
  * they can be read exactly rather than guessed at by OCR. This pulls that layer
@@ -7,11 +7,19 @@
  * Deliberate limits: this reads text-layer PDFs only. Scanned/photographed
  * PDFs have no text layer and will return nothing — the caller must say so
  * plainly rather than presenting an empty result as "no charges found".
- * Encrypted PDFs and CID/Type0 fonts with custom encodings are not handled.
+ * The basic fallback cannot decode CID/Type0 fonts with custom encodings.
  */
 'use strict';
 
 const PDF = (() => {
+  // Capture the classic script URL now; currentScript is null in async work.
+  const scriptUrl = typeof document !== 'undefined' && document.currentScript?.src;
+  let robustModule;
+  function pdfError(code, message) {
+    const err = new Error(message);
+    err.code = code;
+    return err;
+  }
   const latin1 = (bytes) => {
     let s = '';
     const CHUNK = 0x8000;
@@ -98,7 +106,7 @@ const PDF = (() => {
   function parseContent(text) {
     const TOKEN = /\((?:\\.|[^\\()])*\)|<[0-9A-Fa-f\s]*>|\[|\]|[-+]?[\d.]+|[A-Za-z'"*]+/g;
     const rows = [];
-    let nums = [], cur = '', y = null, pendingArray = false;
+    let nums = [], cur = '', shown = '', y = null, leading = 0, pendingArray = false;
 
     const flush = () => {
       // Normalise whitespace but preserve the two-space column gaps inserted on
@@ -109,33 +117,45 @@ const PDF = (() => {
       cur = '';
     };
 
+    const nextLine = () => {
+      flush();
+      // T* (and the quote operators) advance the text line matrix by the
+      // active leading; leaving y unchanged merges distinct receipt rows.
+      y = y !== null && leading !== 0 ? y - leading : null;
+    };
+
     let m;
     while ((m = TOKEN.exec(text)) !== null) {
       const tok = m[0];
 
-      if (tok[0] === '(') { cur += decodeLiteral(tok.slice(1, -1)); continue; }
-      if (tok[0] === '<' && tok[1] !== '<') { cur += decodeHex(tok.slice(1, -1)); continue; }
+      if (tok[0] === '(') { shown += decodeLiteral(tok.slice(1, -1)); continue; }
+      if (tok[0] === '<' && tok[1] !== '<') { shown += decodeHex(tok.slice(1, -1)); continue; }
       if (tok === '[') { pendingArray = true; nums = []; continue; }
       if (tok === ']') { pendingArray = false; continue; }
       if (/^[-+]?[\d.]+$/.test(tok)) {
         const v = parseFloat(tok);
         // Inside a TJ array, large negative kerning means a word gap.
-        if (pendingArray && v <= -100) cur += ' ';
+        if (pendingArray && v <= -100) shown += ' ';
         else nums.push(v);
         continue;
       }
 
       switch (tok) {
         case 'Td': case 'TD': {
-          const ny = nums.length >= 2 ? nums[nums.length - 1] : null;
-          // A vertical move starts a new visual row; a purely horizontal one
-          // is the next column of the same row and needs a separator, or
-          // "2026-03-14" and "99283" arrive glued together as one token.
-          if (ny !== null && (y === null || Math.abs(ny) > 0.5)) flush();
-          else if (cur && !/\s$/.test(cur)) cur += '  ';
-          y = ny;
+          const dy = nums.length >= 2 ? nums[nums.length - 1] : null;
+          if (dy !== null) {
+            if (tok === 'TD') leading = -dy;
+            // Td and TD are relative to the current text line matrix; equal
+            // deltas on consecutive rows must not look like equal baselines.
+            if (Math.abs(dy) > 0.5) flush();
+            else if (cur && !/\s$/.test(cur)) cur += '  ';
+            y = (y ?? 0) + dy;
+          }
           break;
         }
+        case 'TL':
+          if (nums.length) leading = nums[nums.length - 1];
+          break;
         case 'Tm': {
           const ny = nums.length >= 6 ? nums[nums.length - 1] : null;
           if (y !== null && ny !== null && Math.abs(ny - y) > 1.5) flush();
@@ -143,8 +163,14 @@ const PDF = (() => {
           y = ny;
           break;
         }
-        case 'T*': case "'": case '"': flush(); break;
-        case 'ET': case 'BT': flush(); break;
+        case 'Tj': case 'TJ':
+          cur += shown; shown = ''; break;
+        case 'T*':
+          nextLine(); break;
+        case "'": case '"':
+          nextLine(); cur += shown; shown = ''; break;
+        case 'ET': case 'BT':
+          flush(); shown = ''; y = null; break;
         default: break;
       }
       nums = [];
@@ -170,7 +196,7 @@ const PDF = (() => {
     return lines.filter((l) => l.trim());
   }
 
-  async function extractText(arrayBuffer) {
+  async function extractBasic(arrayBuffer) {
     const bytes = new Uint8Array(arrayBuffer);
     if (latin1(bytes.subarray(0, 5)) !== '%PDF-') throw new Error('not a PDF file');
     if (/\/Encrypt\b/.test(latin1(bytes.subarray(0, Math.min(bytes.length, 4096))))) {
@@ -189,10 +215,38 @@ const PDF = (() => {
         if (!ok) continue;
       }
       const text = latin1(data);
-      if (!/\b(Tj|TJ)\b/.test(text)) continue;      // not a content stream
+      if (!/(?:\b(?:Tj|TJ)\b|[)>]\s*['"])/.test(text)) continue;      // not a content stream
       out.push(...assemble(parseContent(text)));
     }
     return out.join('\n');
+  }
+
+
+  async function extractText(arrayBuffer, signal) {
+    const bytes = new Uint8Array(arrayBuffer);
+    if (bytes.length > 25 * 1024 * 1024) {
+      throw pdfError('PDF_LIMIT', 'This PDF exceeds the 25 MB text-reading limit.');
+    }
+    if (latin1(bytes.subarray(0, 5)) !== '%PDF-') throw new Error('not a PDF file');
+    if (scriptUrl) {
+      if (!robustModule) {
+        robustModule = import(new URL('pdf_text.mjs', scriptUrl).href).catch(() => null);
+      }
+      const adapter = await robustModule;
+      if (adapter) {
+        try { return await adapter.extractPdfText(bytes, signal); }
+        catch (error) {
+          if (error?.code !== 'PDF_ASSETS_REQUIRED') throw error;
+        }
+      }
+    }
+    // The small extractor cannot map CID character codes. Never return a
+    // plausible-looking misread from a document that may use such fonts.
+    const info = latin1(bytes);
+    if (/\/(?:Type0|CIDFontType[02]|Identity-[HV]|ToUnicode|ObjStm)\b/.test(info)) {
+      throw pdfError('PDF_ASSETS_REQUIRED', 'This PDF needs the prepared local PDF reader to decode its fonts.');
+    }
+    return extractBasic(arrayBuffer);
   }
 
   return { extractText };

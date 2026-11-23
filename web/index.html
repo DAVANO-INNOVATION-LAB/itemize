@@ -4,34 +4,75 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>itemize — review an itemized medical bill</title>
-<meta name="description" content="Check an itemized medical bill against public CMS data. Runs entirely in your browser; your bill is never uploaded.">
+<meta name="description" content="Add a medical receipt or bill. Itemize checks the charges and shows what to do next. No account needed.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap">
 
-<header>
-  <h1>itemize</h1>
-  <p class="tagline">Check an itemized medical bill against public federal data — duplicate
-  charges, unspecified codes, and drug prices compared to what Medicare allows and what
-  pharmacies pay.</p>
+<header class="topbar">
+  <a class="wordmark" href="./" aria-label="Itemize home">
+    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect width="40" height="40" rx="13" fill="currentColor"/><path d="M13 11h14v18l-3.5-2-3.5 2-3.5-2-3.5 2V11Z" fill="#fff"/><path d="m17 19 2 2 4-4" stroke="#512bd6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>itemize<span class="brand-dot">.</span></span>
+  </a>
+  <span class="private-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> Private by design</span>
 </header>
 
-<div class="privacy">
-  <strong>Your bill never leaves this device.</strong> There is no upload, no account and no
-  server. Everything below runs in your browser, and you can disconnect from the internet
-  before pasting if you prefer. The page works offline once loaded.
-</div>
+<main id="workspace" aria-labelledby="intake-title">
+  <section id="dropzone" class="receipt-intake">
+    <div class="hero-copy">
+      <div class="eyebrow"><span class="eyebrow-dot"></span> MEDICAL BILL REVIEW</div>
+      <h1 id="intake-title">A clearer look at your<br class="desktop-break"> medical bill.</h1>
+      <p class="tagline">Add a receipt or itemized bill. We’ll read the charges, look for issues, and show you what to ask next.</p>
+      <div id="receipt-controls" class="controls receipt-buttons">
+        <button id="takephoto" type="button" class="primary" aria-controls="camera"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h4l2-3h4l2 3h4a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3"/></svg>Take a photo</button>
+        <button id="choosefile" type="button" class="secondary" aria-controls="file"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3m-5 5 5-5 5 5M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Choose a file</button>
+      </div>
+      <p class="hint intake-note" id="intake-note">Or drop a photo or PDF anywhere in this card.</p>
+      <div class="receipt-feedback">
+        <div id="read-indicator" class="read-indicator hidden" aria-hidden="true"><span></span></div>
+        <p id="filestatus" class="filestatus" role="status" aria-live="polite"></p>
+        <div class="feedback-controls">
+          <button id="cancelread" class="linkbtn hidden" type="button">Cancel</button>
+          <button id="retryread" class="linkbtn hidden" type="button">Try again</button>
+          <button id="backreview" class="linkbtn hidden" type="button">Back to current review</button>
+        </div>
+      </div>
+    </div>
+    <figure class="receipt-art" aria-hidden="true">
+      <svg viewBox="0 0 420 405" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="art-glass" x1="40" y1="22" x2="370" y2="382" gradientUnits="userSpaceOnUse"><stop stop-color="#F4EEFF"/><stop offset="1" stop-color="#DCD0FF"/></linearGradient><pattern id="art-grid" width="22" height="22" patternUnits="userSpaceOnUse"><path d="M0 0H22V22" stroke="#9679E4" stroke-opacity=".2"/></pattern></defs>
+        <rect x="18" y="18" width="384" height="369" rx="42" fill="url(#art-glass)"/>
+        <rect x="18" y="18" width="384" height="369" rx="42" fill="url(#art-grid)"/>
+        <circle cx="207" cy="194" r="146" stroke="#9A7BE9" stroke-opacity=".46" stroke-dasharray="4 7"/>
+        <circle cx="207" cy="194" r="121" fill="#CBB8FA" fill-opacity=".75"/>
+        <path d="M68 81h26m-13-13v26M345 300h22m-11-11v22M328 84h12m-6-6v12" stroke="#7449D8" stroke-width="2.4" stroke-linecap="round"/>
+        <g transform="rotate(-10 204 200)">
+          <path d="M121 86h177v245l-15-9-15 9-15-9-15 9-15-9-15 9-15-9-15 9-15-9-15 9-12-7V86Z" fill="#5C30C3" fill-opacity=".24"/>
+          <path d="M108 72h177v245l-15-9-15 9-15-9-15 9-15-9-15 9-15-9-15 9-15-9-15 9-12-7V72Z" fill="#FFFDF9" stroke="#5A33BB" stroke-width="2"/>
+          <rect x="130" y="96" width="34" height="34" rx="9" fill="#512BD6"/>
+          <path d="M147 105v16m-8-8h16" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M177 104h77m-77 11h54M131 157h129M131 182h58m43 0h28M131 207h74m32 0h23M131 232h64m47 0h18M131 258h129M131 279h41m61 0h27" stroke="#9582B8" stroke-width="4" stroke-linecap="round"/>
+          <path d="M131 157h129m-129 101h129" stroke="#D9CDEB" stroke-width="2" stroke-dasharray="3 5"/>
+        </g>
+        <g transform="rotate(10 301 240)">
+          <rect x="240" y="202" width="130" height="77" rx="18" fill="#5835B5" fill-opacity=".24"/>
+          <rect x="233" y="193" width="130" height="77" rx="18" fill="#CDFA92" stroke="#5B7949" stroke-width="2"/>
+          <circle cx="261" cy="232" r="13" fill="#28450E"/>
+          <path d="m255 232 4 4 8-8" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M285 225h55m-55 12h38" stroke="#416821" stroke-width="4" stroke-linecap="round"/>
+        </g>
+      </svg>
+    </figure>
+    <input type="file" id="camera" class="hidden" accept="image/*" capture="environment">
+    <input type="file" id="file" class="hidden"
+      accept="image/*,.pdf,.csv,.tsv,.txt,application/pdf,text/csv,text/plain">
+  </section>
+  <p id="privacy-caption" class="privacy-caption"><span aria-hidden="true">◆</span> Nothing is uploaded. No account needed.</p>
 
-<!-- The bill comes first. The questions below it are worth answering, but making
-     someone fill in a twenty-control form before they can do the thing they came
-     to do is how a tool loses the person it was built for. -->
-<h2><span class="step">1</span> Paste your itemized bill</h2>
-<p class="hint">A spreadsheet export (CSV) works best. Text copied out of a PDF also works.
-If your statement shows only department totals, that is <em>not</em> an itemized bill —
-ask the billing office for one showing a code, quantity and charge on every line.</p>
-
-<div id="dropzone">
+  <details id="manual" class="disclosure intake-support">
+    <summary>Paste bill text or try an example</summary>
+    <div class="detail-body">
   <label for="bill" class="hidden">Itemized bill text</label>
   <textarea id="bill" spellcheck="false" autocapitalize="off" autocorrect="off"
     autocomplete="off" placeholder="Date,Code,NDC,Description,Qty,Charges
@@ -45,19 +86,114 @@ ask the billing office for one showing a code, quantity and charge on every line
 
   <div class="controls">
     <button id="run">Review this bill</button>
-    <label class="filebtn">Open a file…<input type="file" id="file"
-      accept=".csv,.tsv,.txt,.pdf,application/pdf,text/csv,text/plain"></label>
-    <button id="demo" class="secondary">Load an example</button>
-    <button id="clear" class="secondary">Clear</button>
+    <button id="demo" class="secondary">Try an example</button>
+    <button id="clear" class="secondary">Clear this bill</button>
   </div>
-  <p id="filestatus" class="filestatus" role="status" aria-live="polite"></p>
-</div>
+    </div>
+  </details>
 
-<h2><span class="step">2</span> Your situation</h2>
-<p class="hint">Who is exposed to the charge changes which findings matter — and it decides
-whether you have rights that outrank any coding question. Every answer is optional and
-nothing is assumed if you skip it. These answers stay on this device.</p>
-<p id="ctxprompt" class="ctxprompt hidden" role="status"></p>
+<section id="results" class="hidden" aria-labelledby="result-title">
+  <div class="result-shell">
+    <div class="result-decoration" aria-hidden="true"></div>
+    <div class="result-bar">
+      <p class="result-label"><span class="eyebrow-dot"></span> YOUR MEDICAL DOCUMENT</p>
+      <button id="reviewagain" class="secondary" type="button">Review another</button>
+    </div>
+    <h2 id="result-title" tabindex="-1">Your receipt review</h2>
+    <p id="resultstatus" class="resultstatus" role="status" aria-live="polite"></p>
+    <div id="parsecheck" class="parsecheck hidden">
+      <div class="verify-alert">
+        <span class="verify-mark" aria-hidden="true">≋</span>
+        <div><strong id="verify-heading">Check the amounts match your receipt.</strong>
+        <p id="parsecheckbody"></p></div>
+      </div>
+      <div id="verify-photos" class="verify-charges" tabindex="0" aria-labelledby="verify-heading">
+        <ol id="verify-first"></ol>
+        <details id="verify-more" class="hidden">
+          <summary id="verify-more-label">Show more charges</summary>
+          <ol id="verify-rest" start="9"></ol>
+        </details>
+      </div>
+      <div id="verify-actions" class="controls">
+        <button id="confirmlines" type="button" class="primary">Amounts match</button>
+        <button id="rejectlines" type="button" class="secondary">Something is off</button>
+      </div>
+      <section id="charge-editor" class="charge-editor hidden" aria-labelledby="charge-editor-heading">
+        <h3 id="charge-editor-heading" tabindex="-1">Correct the charges</h3>
+        <p class="hint">Use your original receipt to correct a description or amount. Edits stay in this tab and don’t change the original.</p>
+        <ol id="editable-charges" class="editable-charges"></ol>
+        <p id="charge-editor-status" class="hint" role="status"></p>
+        <div class="controls">
+          <button id="finish-charge-edit" type="button">Review corrections</button>
+          <button id="discard-charge-edit" type="button" class="secondary">Cancel editing</button>
+        </div>
+      </section>
+    </div>
+    <div id="outcome" class="outcome"></div>
+    <p id="reading-note" class="reading-note hidden"></p>
+    <details id="read-recovery" class="read-recovery hidden">
+      <summary>Read or correct the extracted text</summary>
+      <div class="recovery-content">
+        <p id="recovery-help" class="hint">If a charge is missing or its amount is wrong, correct it using your original document. Put each service and its exact amount on its own line. Nothing is uploaded.</p>
+        <label for="recovery-text">Text read on this device</label>
+        <textarea id="recovery-text" rows="5" aria-describedby="recovery-help" spellcheck="false"
+          autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+        <div class="controls">
+          <button id="review-corrected" type="button" class="secondary">Review corrected text</button>
+          <p id="recovery-status" class="hint" role="status"></p>
+        </div>
+      </div>
+    </details>
+  </div>
+  <details id="technical" class="disclosure hidden">
+    <summary>All findings and sources</summary>
+    <div class="detail-body">
+      <div class="summary" id="summary"></div>
+      <div id="actions"></div>
+      <div id="findings"></div>
+    </div>
+  </details>
+  <details id="charges" class="disclosure hidden">
+    <summary id="linestable">Charges we read</summary>
+    <div class="detail-body">
+      <p class="hint">Compare these amounts with your receipt before using them.</p>
+      <div class="scroll"><table id="linetable">
+        <thead><tr><th>#</th><th>Date</th><th>Code</th><th>Description</th>
+          <th class="num">Units</th><th class="num">Charge</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </details>
+  <details id="exporttools" class="disclosure hidden">
+    <summary>Save the review or draft a letter</summary>
+    <div class="detail-body">
+      <div class="controls">
+        <button id="download" disabled>Download the review</button>
+        <button id="print" class="secondary">Print / save as PDF</button>
+      </div>
+      <button id="exportverify" class="linkbtn" type="button">Check charges to unlock these tools</button>
+      <p id="downloadhint" class="hint small">Confirm the charges to download or print the review.</p>
+      <h3 class="lettershead">Draft letters</h3>
+      <p class="hint">Check your facts before sending a letter to your billing office.</p>
+      <div class="controls" id="letters"></div>
+      <div id="letterbox" class="letterbox hidden">
+        <label for="lettertext" class="hidden">Letter draft</label>
+        <textarea id="lettertext" spellcheck="false" rows="18"></textarea>
+        <div class="controls">
+          <button id="copyletter" class="secondary">Copy to clipboard</button>
+          <button id="downloadletter" class="secondary">Download as .txt</button>
+          <button id="closeletter" class="secondary">Close</button>
+        </div>
+        <p id="copystatus" class="filestatus" role="status" aria-live="polite"></p>
+      </div>
+    </div>
+  </details>
+</section>
+
+<details id="settings" class="disclosure">
+  <summary>Add insurance or billing details (optional)</summary>
+  <div class="detail-body">
+    <p class="hint">Add these only if you want additional checks.</p>
 
 <div id="context">
   <fieldset>
@@ -109,82 +245,26 @@ nothing is assumed if you skip it. These answers stay on this device.</p>
   </fieldset>
 </div>
 
-<h2><span class="step">3</span> Your Explanation of Benefits <span class="opt">optional, but the strongest check</span></h2>
-<p class="hint">If you are insured, add the EOB your plan sent. If the provider is billing
-you more than the EOB says you owe, that is the clearest error there is — and it is the
-one your insurer will not catch for you.</p>
+<h3>Compare your insurer’s statement</h3>
+<p class="hint">Add the Explanation of Benefits (EOB) from your insurance plan.</p>
 <div class="controls">
-  <label class="filebtn">Add an EOB file…<input type="file" id="eobfile"
-    accept=".csv,.tsv,.txt,.pdf,application/pdf,text/csv,text/plain"></label>
+  <button id="chooseeob" class="secondary" type="button">Choose an EOB file</button>
+  <input type="file" id="eobfile" class="hidden"
+    accept=".csv,.tsv,.txt,.pdf,application/pdf,text/csv,text/plain">
 </div>
 <p id="eobstatus" class="filestatus" role="status" aria-live="polite"></p>
-
-<section id="results" class="hidden">
-  <h2><span class="step">4</span> What we found</h2>
-
-  <!-- The only live region on the page. Announcing the whole results block on every
-       context change makes a screen reader re-read the entire audit each time a box
-       is ticked. -->
-  <p id="resultstatus" class="resultstatus" role="status" aria-live="polite"></p>
-
-  <div id="parsecheck" class="parsecheck hidden">
-    <strong>Check this before you rely on anything below.</strong>
-    <p id="parsecheckbody"></p>
-    <div class="controls">
-      <button id="confirmlines" class="secondary">The lines below match my bill</button>
-      <button id="rejectlines" class="secondary">They don't match</button>
-    </div>
   </div>
+</details>
 
-  <div class="summary" id="summary"></div>
-
-  <div id="actions"></div>
-
-  <h3 class="findingshead">Every finding</h3>
-  <div id="findings"></div>
-
-  <h3 id="linestable">Lines reviewed</h3>
-  <p class="hint">Compare this against your paper bill line by line. A mis-read line
-  produces a confident, sourced, wrong dispute — and that costs you credibility you may
-  only get to spend once.</p>
-  <div class="scroll"><table id="linetable">
-    <thead><tr><th>#</th><th>Date</th><th>Code</th><th>Description</th>
-      <th class="num">Units</th><th class="num">Charge</th></tr></thead>
-    <tbody></tbody>
-  </table></div>
-
-  <h2><span class="step">5</span> Take it to the billing office</h2>
-  <p class="hint">Download a plain evidence packet listing every finding with the federal
-  file it came from. A billing office ignores an unsourced complaint; this one cites its
-  sources.</p>
-  <div class="controls">
-    <button id="download" disabled>Download evidence packet (.md)</button>
-    <button id="print" class="secondary">Print / save as PDF</button>
-  </div>
-  <p id="downloadhint" class="hint small">Confirm the lines above match your bill to
-  enable the packet.</p>
-
-  <h3 class="lettershead">Draft letters for your situation</h3>
-  <p class="hint">Drafts, not legal documents. Your own facts stay in [square brackets]
-  so nothing is asserted on your behalf that you have not checked.</p>
-  <div class="controls" id="letters"></div>
-  <div id="letterbox" class="letterbox hidden">
-    <label for="lettertext" class="hidden">Letter draft</label>
-    <textarea id="lettertext" spellcheck="false" rows="18"></textarea>
-    <div class="controls">
-      <button id="copyletter" class="secondary">Copy to clipboard</button>
-      <button id="downloadletter" class="secondary">Download as .txt</button>
-      <button id="closeletter" class="secondary">Close</button>
-    </div>
-    <p id="copystatus" class="filestatus" role="status" aria-live="polite"></p>
-  </div>
-</section>
-
+<details class="disclosure">
+  <summary>Storage, sources and limits</summary>
+  <div class="detail-body">
+  <p id="provenance" class="hint">Reference data: loading…</p>
 <div class="keepbox">
   <label><input type="checkbox" id="keep"> Keep a working copy of this bill on this device</label>
   <p class="hint small">Off by default. When on, the text you pasted and the answers above
   are stored in this browser only — never sent anywhere — so a refresh does not lose your
-  work. On a shared or public computer, leave this off.
+  work. Charge corrections aren’t saved across a reload. On a shared or public computer, leave this off.
   <button id="forget" class="linkbtn">Delete the stored copy now</button></p>
   <p id="keepstatus" class="filestatus" role="status" aria-live="polite"></p>
 </div>
@@ -208,15 +288,18 @@ one your insurer will not catch for you.</p>
   </ul>
 </div>
 
+  </div>
+</details>
+</main>
+
 <footer>
-  <p id="provenance">Reference data: loading…</p>
-  <p>Open source. Verify anything here before relying on it — every finding names its source
-  so that you can. <a href="https://github.com/DAVANO-INNOVATION-LAB/itemize/blob/main/CAVEATS.md">Read the caveats</a>.</p>
+  <p>Built to help you ask better questions. Information, not advice. <a href="https://github.com/DAVANO-INNOVATION-LAB/itemize/blob/main/CAVEATS.md">Read the caveats</a>.</p>
 </footer>
 
 </div>
 <script src="rules.js"></script>
 <script src="pdf.js"></script>
+<script src="receipt.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -1,0 +1,139 @@
+"""Synthetic layout checks for receipts with quantity, price, discounts and total."""
+import json
+import shutil
+import subprocess
+import unittest
+from pathlib import Path
+
+from itemize.parse import parse_details
+
+
+ROOT = Path(__file__).resolve().parents[1]
+FIXTURE = """1 Example Street
+Description  Catalog Ref  Qty  Price  Discount  Total
+Walking boot  X992  2  $20.00  $40.00
+Packing tape  ABC99 3  $10.00  $5.00  $25.00
+Loose Parts  1  $1.00  —  $1.00
+3  $5.00  $15.00
+Other  2  $3.00  $999.00
+Subtotal  $65.00
+Tax  $1.00
+Total  $66.00
+Paid  $66.00
+Due  $0.00
+After summary  1  $5.00  $5.00"""
+EXPECTED = [
+    {"desc": "Walking boot", "charge": 40, "units": 2, "code": ""},
+    {"desc": "Packing tape", "charge": 25, "units": 3, "code": ""},
+    {"desc": "Loose Parts", "charge": 1, "units": 1, "code": ""},
+]
+
+
+class ReceiptTableTests(unittest.TestCase):
+    @staticmethod
+    def snapshot(text):
+        lines, stats = parse_details(text)
+        return {
+            "lines": [{k: getattr(l, k) for k in ("desc", "charge", "units", "code")} for l in lines],
+            "stats": stats,
+        }
+
+    def test_labeled_receipt_stays_distinct_from_metadata(self):
+        result = self.snapshot(FIXTURE)
+        self.assertEqual(result["lines"], EXPECTED)
+        self.assertEqual(result["stats"]["uncertain"], 3)
+
+    def test_no_receipt_layout_guess_from_unlabeled_total(self):
+        s = "Description  Total\nA service  1  $5.00  $5.00"
+        self.assertEqual(self.snapshot(s)["lines"], [])
+
+    @unittest.skipUnless(shutil.which("node"), "node required for browser parser parity")
+    def test_browser_python_parity(self):
+        script = r"""
+const fs = require('fs');
+const {lines,stats} = require('./web/rules.js').parseBillDetails(fs.readFileSync(0,'utf8'));
+process.stdout.write(JSON.stringify({lines:lines.map(({desc,charge,units,code})=>({desc,charge,units,code})),stats}));
+"""
+        node = subprocess.run(["node", "-e", script], cwd=ROOT, input=FIXTURE,
+                              text=True, capture_output=True, check=True, timeout=15)
+        self.assertEqual(json.loads(node.stdout), self.snapshot(FIXTURE))
+
+    @unittest.skipUnless(shutil.which("node"), "node required for browser parser parity")
+    def test_duplicate_needs_same_description_for_uncoded_items(self):
+        from itemize.rules import rule_exact_duplicates
+
+        rows = [
+            {"idx": 1, "desc": "Blue | tape", "code": "", "date": "", "charge": 1, "units": 1},
+            {"idx": 2, "desc": "Green tape", "code": "", "date": "", "charge": 1, "units": 1},
+            {"idx": 3, "desc": "Blue |    TAPE", "code": "", "date": "", "charge": 1, "units": 1},
+            {"idx": 4, "desc": "Laboratory", "code": "11111", "date": "", "charge": 2, "units": 1},
+            {"idx": 5, "desc": "Lab", "code": "11111", "date": "", "charge": 2, "units": 1},
+        ]
+        from itemize.model import Line
+        findings = rule_exact_duplicates([Line(**r) for r in rows], None)
+        self.assertEqual([f.lines for f in findings], [[1, 3], [4, 5]])
+        script = r"""
+const fs = require('fs'), I = require('./web/rules.js');
+const input = JSON.parse(fs.readFileSync(0,'utf8'));
+const findings = I.audit(input, new I.Reference({}));
+process.stdout.write(JSON.stringify(findings.filter(f=>f.rule === 'exact_duplicate').map(f=>f.lines)));
+"""
+        node = subprocess.run(["node", "-e", script], cwd=ROOT, input=json.dumps(rows),
+                              text=True, capture_output=True, check=True, timeout=15)
+        self.assertEqual(sorted(json.loads(node.stdout)), [[1, 3], [4, 5]])
+
+    def test_plain_price_can_be_extended_but_explicit_unit_price_cannot(self):
+        body = ("Description  Qty  Price  Discount  Total\n"
+                "Tape  2  $8.40  $1.20  $7.20\n"
+                "Boot  4  $20.00  $20.00\n"
+                "4  $20.00  $20.00\n"
+                "Unbalanced  4  $20.00  $123.45\n")
+        lines = self.snapshot(body)["lines"]
+        self.assertEqual([r["charge"] for r in lines], [7.20, 20.00])
+        self.assertEqual(self.snapshot(body.replace("Qty  Price", "Qty  Unit Price"))["lines"], [])
+        if shutil.which("node"):
+            script = r"""
+const I=require('./web/rules.js'), fs=require('fs');
+const text=fs.readFileSync(0,'utf8');
+process.stdout.write(JSON.stringify([I.parseBill(text).map(x=>x.charge),I.parseBill(text.replace('Qty  Price','Qty  Unit Price')).map(x=>x.charge)]));
+"""
+            node = subprocess.run(["node", "-e", script], cwd=ROOT, input=body,
+                                  text=True, capture_output=True, check=True, timeout=15)
+            self.assertEqual(json.loads(node.stdout), [[7.20, 20.00], []])
+
+    @unittest.skipUnless(shutil.which("node"), "node required for browser parser parity")
+    def test_receipt_duplicates_require_same_readable_reference(self):
+        from itemize.rules import rule_exact_duplicates
+
+        receipt = ("Description  Procedure  Qty  Price  Discount  Total\n"
+                   "Consultation  99212  1  $4.00  $4.00\n"
+                   "Consultation  99213  1  $4.00  $4.00\n"
+                   "Consultation  99212  1  $4.00  $4.00\n"
+                   "Consultation  1  $4.00  $4.00\n"
+                   "Consultation  1  $4.00  $4.00")
+        clinical = ("Description  Code  Charge\n"
+                    "Consultation  99212  $4.00\n"
+                    "Consultation  99212  $4.00")
+        expected = [{"reference": ["99212", "99213", "99212", "", ""],
+                     "codes": ["", "", "", "", ""], "duplicates": [[1, 3]]},
+                    {"reference": [None, None], "codes": ["99212", "99212"],
+                     "duplicates": [[1, 2]]}]
+        actual = []
+        for doc in (receipt, clinical):
+            lines, _ = parse_details(doc)
+            actual.append({"reference": [line.receipt_reference for line in lines],
+                           "codes": [line.code for line in lines],
+                           "duplicates": [item.lines for item in rule_exact_duplicates(lines, None)]})
+        self.assertEqual(actual, expected)
+        script = r"""
+const I = require('./web/rules.js'),fs = require('fs');
+const docs = JSON.parse(fs.readFileSync(0,'utf8'));
+process.stdout.write(JSON.stringify(docs.map(doc => {
+  const lines = I.parseBill(doc);
+  return {reference:lines.map(x=>x.receipt_reference ?? null), codes:lines.map(x=>x.code),
+          duplicates:I.audit(lines,new I.Reference({})).filter(f=>f.rule==='exact_duplicate').map(f=>f.lines)};
+})));
+"""
+        node = subprocess.run(["node", "-e", script], cwd=ROOT, input=json.dumps([receipt, clinical]),
+                              text=True, capture_output=True, check=True, timeout=15)
+        self.assertEqual(json.loads(node.stdout), expected)

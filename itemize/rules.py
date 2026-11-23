@@ -76,17 +76,20 @@ DRG_NOTICE_MULTIPLE = 2.0
 
 
 def _key(line):
-    return (line.code.upper(), line.date.strip(), round(line.charge, 2), round(line.units, 3))
+    code = line.code.upper()
+    description_key = re.sub(r'\s+', ' ', line.desc.strip()).lower() if not code else ''
+    return (code, line.date.strip(), round(line.charge, 2), round(line.units, 3),
+            description_key, line.receipt_reference)
 
 
 def rule_exact_duplicates(lines, ref, ctx=None):
-    """Identical code + date + units + charge appearing more than once."""
+    """Matching coded lines; uncoded lines must also match their descriptions."""
     groups = defaultdict(list)
     for ln in lines:
-        if ln.code or ln.desc:
+        if (ln.code or ln.desc.strip()) and ln.receipt_reference != "":
             groups[_key(ln)].append(ln)
     out = []
-    for (code, date, charge, units), grp in groups.items():
+    for (code, date, charge, units, _, _), grp in groups.items():
         if len(grp) < 2 or charge <= 0:
             continue
         extra = (len(grp) - 1) * charge

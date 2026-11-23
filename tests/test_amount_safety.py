@@ -170,12 +170,13 @@ class TestAmountSafety(unittest.TestCase):
             found = audit(lines, FakeRef(), eob_rows=[dict(code='J1885', patient=50)])
             output = js('outputs', lines=[asdict(l) for l in lines], findings=[asdict(f) for f in found])
             if want:
-                for key in ('summary', 'actions', 'announcement', 'letter'):
+                for key in ('summary', 'actions', 'letter'):
                     self.assertIn(f'${want:.2f}', output[key], key)
                 self.assertIn(f'Directly disputable line items: **${want:.2f}**', output['markdown'])
             else:
                 self.assertNotIn('Disputable line items', output['summary'])
                 self.assertNotIn('The disputed amount is', output['letter'])
+            self.assertNotIn('$', output['announcement'])
             payload = json.loads(evidence.to_json(lines, found, FakeRef()))
             self.assertEqual(payload['summary']['disputable_line_items'], want)
             self.assertEqual(next(a for a in payload['next_actions'] if a['key'] == 'dispute')['amount'], want)

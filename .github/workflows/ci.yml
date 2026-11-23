@@ -32,6 +32,10 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Stage pinned browser readers for the embedded-font test
+        if: matrix.python-version == '3.11'
+        run: python3 tools/prepare_ocr.py
+
       - name: Run tests
         run: python3 -m unittest discover -s tests -v
 

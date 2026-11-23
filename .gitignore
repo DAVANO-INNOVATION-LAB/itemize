@@ -7,3 +7,5 @@ probe-results.json
 dist/
 build/
 *.egg-info/
+
+/web/vendor/ocr/

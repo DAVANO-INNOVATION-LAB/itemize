@@ -15,11 +15,12 @@ if (input.mode === 'aggregate') {
   const nodes = new Map();
   const document = {
     querySelector(s) {
-      if (!nodes.has(s)) nodes.set(s, { innerHTML: '', textContent: '',
-        classList: { add() {}, remove() {} } });
+      if (!nodes.has(s)) nodes.set(s, { innerHTML: '', textContent: '', addEventListener() {}, setAttribute() {}, replaceChildren() {},
+        classList: { add() {}, remove() {}, toggle() {} } });
       return nodes.get(s);
     },
     querySelectorAll() { return []; },
+    getElementById(id) { return this.querySelector('#' + id); },
   };
   const context = vm.createContext({ window: { ITEMIZE: I }, document, input });
   // Run the real rendering/markdown/letter functions before event binding.
